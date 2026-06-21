@@ -255,11 +255,15 @@ export function HostManager({
   }, [active]);
 
   const allHosts = hosts;
-  const searchedCredentials = credentials.filter(
-    (c) =>
-      c.name.toLowerCase().includes(effectiveSearch.toLowerCase()) ||
-      c.username.toLowerCase().includes(effectiveSearch.toLowerCase()),
-  );
+  const searchedCredentials = credentials.filter((c) => {
+    // VRIT: guard null name/username (key-only creds) — toLowerCase on null
+    // crashed the page when typing in the credentials search.
+    const q = effectiveSearch.toLowerCase();
+    return (
+      (c.name ?? "").toLowerCase().includes(q) ||
+      (c.username ?? "").toLowerCase().includes(q)
+    );
+  });
   const filteredCredentials = sortCredentials(
     externalFilter
       ? searchedCredentials.filter((c) =>
