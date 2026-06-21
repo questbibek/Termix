@@ -76,6 +76,7 @@ jobs:
             git fetch origin vrit
             git checkout vrit
             git pull origin vrit
-            docker compose -f docker/compose.prod.yml pull
-            docker compose -f docker/compose.prod.yml up -d
+            [ -f .env ] || touch .env   # --env-file needs the file to exist
+            docker compose --env-file .env -f docker/compose.prod.yml pull
+            docker compose --env-file .env -f docker/compose.prod.yml up -d
             docker image prune -f
