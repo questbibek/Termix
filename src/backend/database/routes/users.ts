@@ -1710,7 +1710,11 @@ router.post("/login", async (req, res) => {
     const row = db.$client
       .prepare("SELECT value FROM settings WHERE key = 'allow_password_login'")
       .get();
-    if (row && (row as { value: string }).value !== "true") {
+    // VRIT: recovery escape hatch — if you disable password login and lock
+    // yourself out, set FORCE_PASSWORD_LOGIN=true to log back in, re-enable it
+    // in Admin → Settings, then remove the env. See EMAIL_SETUP.md / recovery.
+    const forced = process.env.FORCE_PASSWORD_LOGIN === "true";
+    if (!forced && row && (row as { value: string }).value !== "true") {
       return res
         .status(403)
         .json({ error: "Password authentication is currently disabled" });

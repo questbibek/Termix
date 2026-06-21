@@ -35,6 +35,8 @@ services:
       SMTP_FROM: "${SMTP_FROM:-}"
       SMTP_SECURE: "${SMTP_SECURE:-}"
       SIGNUP_OTP_ENABLED: "${SIGNUP_OTP_ENABLED:-true}"
+      # Recovery hatch: set true only to undo a password-login lockout, then remove.
+      FORCE_PASSWORD_LOGIN: "${FORCE_PASSWORD_LOGIN:-}"
     depends_on:
       - guacd
     networks:
