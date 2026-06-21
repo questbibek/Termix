@@ -17,7 +17,10 @@ const pickPreferences = (row?: typeof userPreferences.$inferSelect) => ({
   fontSize: row?.fontSize ?? null,
   accentColor: row?.accentColor ?? null,
   language: row?.language ?? null,
-  storageMode: row?.storageMode ?? "local",
+  // VRIT: default new users to server-side (cloud) preference storage so
+  // settings persist across devices and survive a cleared browser. Users who
+  // explicitly pick "Browser" still get "local" (it's stored on the row).
+  storageMode: row?.storageMode ?? "cloud",
   commandAutocomplete: row?.commandAutocomplete ?? null,
   commandPaletteEnabled: row?.commandPaletteEnabled ?? null,
   showHostTags: row?.showHostTags ?? null,
