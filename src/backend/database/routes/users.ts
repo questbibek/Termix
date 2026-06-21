@@ -98,11 +98,46 @@ const requireAdmin = authManager.createAdminMiddleware();
  *         description: Failed to create user.
  */
 router.post("/create", async (req, res) => {
+  /* >>> VRIT: detect an authenticated admin making this call. Admin-initiated
+     creation (the Admin → Users → Create dialog) bypasses public-registration
+     gating, the email allowlist, and the signup OTP — admin-created accounts
+     are trusted and created verified. See EMAIL_ALLOWLIST.md / EMAIL_SETUP.md. */
+  let requesterIsAdmin = false;
+  try {
+    const authReq = req as AuthenticatedRequest;
+    let token = authReq.cookies?.jwt as string | undefined;
+    if (!token) {
+      const h = req.headers["authorization"];
+      if (typeof h === "string" && h.startsWith("Bearer ")) {
+        token = h.split(" ")[1];
+      }
+    }
+    if (token && !token.startsWith("tmx_")) {
+      const payload = await authManager.verifyJWTToken(token);
+      if (payload?.userId) {
+        const r = await db
+          .select({ isAdmin: users.isAdmin })
+          .from(users)
+          .where(eq(users.id, payload.userId))
+          .limit(1);
+        requesterIsAdmin = !!r[0]?.isAdmin;
+      }
+    }
+  } catch {
+    /* treat as anonymous self-registration */
+  }
+  /* <<< VRIT */
+
   try {
     const row = db.$client
       .prepare("SELECT value FROM settings WHERE key = 'allow_registration'")
       .get();
-    if (row && (row as Record<string, unknown>).value !== "true") {
+    // VRIT: admins can always create users, even with public registration off
+    if (
+      !requesterIsAdmin &&
+      row &&
+      (row as Record<string, unknown>).value !== "true"
+    ) {
       return res
         .status(403)
         .json({ error: "Registration is currently disabled" });
@@ -137,7 +172,7 @@ router.post("/create", async (req, res) => {
   /* >>> VRIT: email-domain allowlist (see EMAIL_ALLOWLIST.md). Skips the first
      user so the initial admin can always bootstrap. No-op unless
      ALLOWED_EMAIL_DOMAINS is set. */
-  if (isEmailAllowlistEnabled()) {
+  if (!requesterIsAdmin && isEmailAllowlistEnabled()) {
     const userCount =
       (
         db.$client
@@ -290,7 +325,12 @@ router.post("/create", async (req, res) => {
 
     /* >>> VRIT: signup email OTP. New non-first users with an email must verify
        before they can log in (see EMAIL_SETUP.md). No-op unless SMTP configured. */
-    if (isSignupOtpEnabled() && !isFirstUser && isValidEmail(email)) {
+    if (
+      isSignupOtpEnabled() &&
+      !isFirstUser &&
+      !requesterIsAdmin &&
+      isValidEmail(email)
+    ) {
       const code = generateOtpCode();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       db.$client

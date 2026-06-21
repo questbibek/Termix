@@ -39,6 +39,8 @@ type CreateUserDialogProps = {
   onOpenChange: Dispatch<SetStateAction<boolean>>;
   newUsername: string;
   setNewUsername: Dispatch<SetStateAction<string>>;
+  newEmail: string; // VRIT: admin-set email
+  setNewEmail: Dispatch<SetStateAction<string>>; // VRIT
   newPassword: string;
   setNewPassword: Dispatch<SetStateAction<string>>;
   showNewPassword: boolean;
@@ -52,6 +54,8 @@ export function AdminCreateUserDialog({
   onOpenChange,
   newUsername,
   setNewUsername,
+  newEmail,
+  setNewEmail,
   newPassword,
   setNewPassword,
   showNewPassword,
@@ -85,6 +89,20 @@ export function AdminCreateUserDialog({
               onKeyDown={(e) => e.key === "Enter" && handleCreateUser()}
             />
           </div>
+          {/* >>> VRIT: admin sets the user's email (see EMAIL_SETUP.md) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Email <span className="text-accent-brand">*</span>
+            </label>
+            <Input
+              type="email"
+              placeholder="user@vrittechnologies.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreateUser()}
+            />
+          </div>
+          {/* <<< VRIT */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {t("admin.createUserPassword")}{" "}
@@ -121,6 +139,7 @@ export function AdminCreateUserDialog({
             onClick={() => {
               onOpenChange(false);
               setNewUsername("");
+              setNewEmail("");
               setNewPassword("");
             }}
           >

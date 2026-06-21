@@ -108,6 +108,7 @@ export function AdminSettingsPanel() {
   // Create user dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [newEmail, setNewEmail] = useState(""); // VRIT: admin-set email
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [createUserLoading, setCreateUserLoading] = useState(false);
@@ -449,8 +450,13 @@ export function AdminSettingsPanel() {
   }
 
   async function handleCreateUser() {
-    if (!newUsername.trim() || !newPassword.trim()) {
+    if (!newUsername.trim() || !newPassword.trim() || !newEmail.trim()) {
       toast.error(t("admin.createUserRequired"));
+      return;
+    }
+    // VRIT: validate the admin-entered email
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) {
+      toast.error("Please enter a valid email address");
       return;
     }
     if (newPassword.length < 6) {
@@ -459,10 +465,11 @@ export function AdminSettingsPanel() {
     }
     setCreateUserLoading(true);
     try {
-      await registerUser(newUsername.trim(), newPassword);
+      await registerUser(newUsername.trim(), newPassword, newEmail.trim()); // VRIT: email
       toast.success(t("admin.createUserSuccess", { username: newUsername }));
       setCreateUserOpen(false);
       setNewUsername("");
+      setNewEmail("");
       setNewPassword("");
       loadUsers();
     } catch (e: unknown) {
@@ -822,6 +829,8 @@ export function AdminSettingsPanel() {
         onOpenChange={setCreateUserOpen}
         newUsername={newUsername}
         setNewUsername={setNewUsername}
+        newEmail={newEmail}
+        setNewEmail={setNewEmail}
         newPassword={newPassword}
         setNewPassword={setNewPassword}
         showNewPassword={showNewPassword}
