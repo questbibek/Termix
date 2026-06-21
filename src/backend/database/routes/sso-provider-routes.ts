@@ -63,28 +63,46 @@ function applyProviderDefaults(
   type: SSOProviderType,
   config: Partial<OIDCProviderConfig>,
 ): Partial<OIDCProviderConfig> {
+  // VRIT: merge so BLANK config values don't clobber the preset endpoints.
+  // The Google/GitHub dialogs render the auth/token URLs as static text but
+  // still submit "" for them; a plain `{...defaults, ...config}` spread would
+  // overwrite the defaults with "" → "Failed to generate authorization URL".
+  const mergeNonEmpty = (
+    defaults: Partial<OIDCProviderConfig>,
+    cfg: Partial<OIDCProviderConfig>,
+  ): Partial<OIDCProviderConfig> => {
+    const out: Record<string, unknown> = { ...defaults };
+    for (const [k, v] of Object.entries(cfg)) {
+      if (v !== "" && v !== null && v !== undefined) out[k] = v;
+    }
+    return out as Partial<OIDCProviderConfig>;
+  };
   if (type === "github") {
-    return {
-      authorization_url: "https://github.com/login/oauth/authorize",
-      token_url: "https://github.com/login/oauth/access_token",
-      issuer_url: "https://github.com",
-      identifier_path: "id",
-      name_path: "name",
-      scopes: "read:user user:email",
-      userinfo_url: "https://api.github.com/user",
-      ...config,
-    };
+    return mergeNonEmpty(
+      {
+        authorization_url: "https://github.com/login/oauth/authorize",
+        token_url: "https://github.com/login/oauth/access_token",
+        issuer_url: "https://github.com",
+        identifier_path: "id",
+        name_path: "name",
+        scopes: "read:user user:email",
+        userinfo_url: "https://api.github.com/user",
+      },
+      config,
+    );
   }
   if (type === "google") {
-    return {
-      authorization_url: "https://accounts.google.com/o/oauth2/v2/auth",
-      token_url: "https://oauth2.googleapis.com/token",
-      issuer_url: "https://accounts.google.com",
-      identifier_path: "sub",
-      name_path: "name",
-      scopes: "openid email profile",
-      ...config,
-    };
+    return mergeNonEmpty(
+      {
+        authorization_url: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_url: "https://oauth2.googleapis.com/token",
+        issuer_url: "https://accounts.google.com",
+        identifier_path: "sub",
+        name_path: "name",
+        scopes: "openid email profile",
+      },
+      config,
+    );
   }
   return config;
 }
