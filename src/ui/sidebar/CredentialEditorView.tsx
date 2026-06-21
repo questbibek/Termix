@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/lib/clipboard";
 import { Copy, Info, Lock, Upload, X } from "lucide-react";
@@ -12,8 +12,11 @@ import {
   createCredential,
   generateKeyPair,
   generatePublicKeyFromPrivate,
+  getCredentials,
   updateCredential,
 } from "@/main-axios";
+// VRIT: reuse the host folder picker for credential folders (consistency)
+import { FolderPathPicker } from "./FolderPathPicker";
 import type { Credential } from "@/types/ui-types";
 
 type CredentialAuthType = Credential["type"];
@@ -54,6 +57,22 @@ export function CredentialEditorView({
     v: (typeof credForm)[K],
   ) => setCredForm((p) => ({ ...p, [k]: v }));
   const [saving, setSaving] = useState(false);
+
+  // VRIT: existing credential folders, to power the folder picker autocomplete
+  const [credFolderPaths, setCredFolderPaths] = useState<string[]>([]);
+  useEffect(() => {
+    getCredentials()
+      .then((res) => {
+        const list = Array.isArray(res) ? res : [];
+        const folders = new Set<string>();
+        for (const c of list) {
+          const f = (c as { folder?: string }).folder;
+          if (f) folders.add(f);
+        }
+        setCredFolderPaths([...folders]);
+      })
+      .catch(() => setCredFolderPaths([]));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -123,10 +142,11 @@ export function CredentialEditorView({
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 {t("hosts.folder")}
               </label>
-              <Input
-                placeholder="e.g. Server Keys"
+              {/* VRIT: searchable select-or-create folder picker (matches hosts) */}
+              <FolderPathPicker
                 value={credForm.folder}
-                onChange={(e) => setCredField("folder", e.target.value)}
+                onChange={(path) => setCredField("folder", path)}
+                folderPaths={credFolderPaths}
               />
             </div>
             <div className="flex flex-col gap-1.5 col-span-2">
