@@ -2426,7 +2426,9 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const hasConnectionError = !!connectionError;
 
     return (
-      <div className="h-full w-full relative" style={{ backgroundColor }}>
+      // VRIT: pl-3 gives breathing room between the host-list panel and the
+      // terminal content (xterm child fills the padded box; bg fills the gap).
+      <div className="h-full w-full relative pl-3" style={{ backgroundColor }}>
         <div
           ref={xtermRef}
           className="h-full w-full"
