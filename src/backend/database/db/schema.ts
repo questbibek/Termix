@@ -4,6 +4,14 @@ import { sql } from "drizzle-orm";
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull(),
+  /* >>> VRIT: email for domain-allowlist registration (see EMAIL_ALLOWLIST.md) */
+  email: text("email"),
+  // email_verified gates login when signup OTP is on (see EMAIL_SETUP.md).
+  // Defaults true so existing users / non-OTP signups are never locked out.
+  emailVerified: integer("email_verified", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /* <<< VRIT */
   passwordHash: text("password_hash").notNull(),
   isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
 

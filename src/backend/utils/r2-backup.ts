@@ -1,0 +1,217 @@
+import path from "path";
+import { PassThrough } from "stream";
+import {
+  S3Client,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import * as tar from "tar";
+import { databaseLogger } from "./logger.js";
+import { saveMemoryDatabaseToFile, databasePaths } from "../database/db/index.js";
+
+/**
+ * Off-site backups of the entire DATA_DIR to a Cloudflare R2 bucket (S3-compatible).
+ *
+ * Fork addition (not in upstream). Self-contained so it survives upstream syncs:
+ * the only touch point in shared code is a single dynamic import in
+ * initializeDatabase(). No-op unless BACKUP_ENABLED=true and R2_* are set.
+ *
+ * Why code-level instead of a host cron: this flushes the in-memory database to
+ * disk via saveMemoryDatabaseToFile() *before* archiving, so the snapshot is
+ * consistent and current — a `docker cp` cron can only grab a file that is up to
+ * 5 minutes stale (see the periodic save in database/db/index.ts).
+ */
+
+interface BackupConfig {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  prefix: string;
+  keepCount: number;
+  intervalHours: number;
+  runOnStart: boolean;
+}
+
+const TEMP_SUFFIXES = [".tmp", ".encrypted.tmp", "-wal", "-shm"];
+
+let running = false;
+let started = false;
+
+function readConfig(): BackupConfig | null {
+  if (process.env.BACKUP_ENABLED !== "true") {
+    databaseLogger.info("R2 backup disabled (set BACKUP_ENABLED=true to enable)", {
+      operation: "r2_backup_disabled",
+    });
+    return null;
+  }
+
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const bucket = process.env.R2_BUCKET;
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+    databaseLogger.warn(
+      "R2 backup enabled but missing required env (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET) — skipping",
+      { operation: "r2_backup_misconfigured" },
+    );
+    return null;
+  }
+
+  const keepCount = Math.max(1, parseInt(process.env.BACKUP_KEEP_COUNT || "15", 10));
+  const intervalHours = Math.max(
+    1,
+    parseInt(process.env.BACKUP_INTERVAL_HOURS || "24", 10),
+  );
+
+  return {
+    accountId,
+    accessKeyId,
+    secretAccessKey,
+    bucket,
+    prefix: (process.env.R2_PREFIX || "data-backups").replace(/\/+$/, ""),
+    keepCount,
+    intervalHours,
+    runOnStart: process.env.BACKUP_RUN_ON_START !== "false",
+  };
+}
+
+function makeClient(cfg: BackupConfig): S3Client {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+    },
+    // R2 rejects aws-sdk v3's default checksum behaviour; only send when required.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
+  });
+}
+
+function timestamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+async function uploadArchive(client: S3Client, cfg: BackupConfig): Promise<string> {
+  const dataDir = databasePaths.directory; // resolved DATA_DIR
+  const parent = path.dirname(dataDir);
+  const base = path.basename(dataDir);
+  const key = `${cfg.prefix}/backup-${timestamp()}.tar.gz`;
+
+  // Stream tar.gz straight to R2 — no temp file on disk. tar's Pack isn't a Node
+  // Readable, so pipe it through a PassThrough and forward errors to it.
+  const archive = new PassThrough();
+  const pack = tar.create(
+    {
+      gzip: true,
+      cwd: parent,
+      // Skip transient DB/temp files that would be inconsistent or useless.
+      filter: (p) => !TEMP_SUFFIXES.some((s) => p.endsWith(s)),
+    },
+    [base],
+  );
+  pack.on("error", (err: unknown) =>
+    archive.destroy(err instanceof Error ? err : new Error(String(err))),
+  );
+  pack.pipe(archive);
+
+  const upload = new Upload({
+    client,
+    params: {
+      Bucket: cfg.bucket,
+      Key: key,
+      Body: archive,
+      ContentType: "application/gzip",
+    },
+  });
+  await upload.done();
+  return key;
+}
+
+async function prune(client: S3Client, cfg: BackupConfig): Promise<number> {
+  const keys: string[] = [];
+  let token: string | undefined;
+  do {
+    const res = await client.send(
+      new ListObjectsV2Command({
+        Bucket: cfg.bucket,
+        Prefix: `${cfg.prefix}/`,
+        ContinuationToken: token,
+      }),
+    );
+    for (const obj of res.Contents || []) {
+      if (obj.Key && obj.Key.endsWith(".tar.gz")) keys.push(obj.Key);
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+
+  // Keys embed a UTC timestamp, so lexical sort == chronological.
+  keys.sort();
+  const toDelete = keys.slice(0, Math.max(0, keys.length - cfg.keepCount));
+  if (toDelete.length === 0) return 0;
+
+  await client.send(
+    new DeleteObjectsCommand({
+      Bucket: cfg.bucket,
+      Delete: { Objects: toDelete.map((Key) => ({ Key })) },
+    }),
+  );
+  return toDelete.length;
+}
+
+async function runBackup(client: S3Client, cfg: BackupConfig): Promise<void> {
+  if (running) {
+    databaseLogger.warn("Skipping R2 backup — previous run still in progress", {
+      operation: "r2_backup_overlap",
+    });
+    return;
+  }
+  running = true;
+  const startedAt = Date.now();
+  try {
+    // 1. Force a consistent, current on-disk snapshot of the in-memory DB.
+    await saveMemoryDatabaseToFile();
+    // 2. Archive + upload the whole data dir.
+    const key = await uploadArchive(client, cfg);
+    // 3. Keep only the newest N by count.
+    const pruned = await prune(client, cfg);
+    databaseLogger.info(
+      `R2 backup complete: ${key} (${Math.round((Date.now() - startedAt) / 1000)}s, pruned ${pruned}, keeping ${cfg.keepCount})`,
+      { operation: "r2_backup_success", key, pruned },
+    );
+  } catch (error) {
+    databaseLogger.error("R2 backup failed", error, {
+      operation: "r2_backup_failed",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    running = false;
+  }
+}
+
+export function startR2BackupScheduler(): void {
+  if (started) return;
+  const cfg = readConfig();
+  if (!cfg) return;
+  started = true;
+
+  const client = makeClient(cfg);
+  const intervalMs = cfg.intervalHours * 60 * 60 * 1000;
+
+  databaseLogger.info(
+    `R2 backup scheduler started: every ${cfg.intervalHours}h, keep last ${cfg.keepCount}, bucket ${cfg.bucket}/${cfg.prefix}`,
+    { operation: "r2_backup_started" },
+  );
+
+  if (cfg.runOnStart) {
+    // Small delay so startup isn't competing with the first backup.
+    setTimeout(() => void runBackup(client, cfg), 60 * 1000);
+  }
+  const timer = setInterval(() => void runBackup(client, cfg), intervalMs);
+  // Don't keep the event loop alive solely for backups.
+  if (typeof timer.unref === "function") timer.unref();
+}

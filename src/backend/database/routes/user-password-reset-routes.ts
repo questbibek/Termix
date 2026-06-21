@@ -5,6 +5,12 @@ import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 import { AuthManager } from "../../utils/auth-manager.js";
 import { authLogger } from "../../utils/logger.js";
+/* >>> VRIT: email reset codes via SMTP when configured (see EMAIL_SETUP.md) */
+import {
+  isMailerConfigured,
+  sendPasswordResetEmail,
+} from "../../utils/mailer.js";
+/* <<< VRIT */
 import { loginRateLimiter } from "../../utils/login-rate-limiter.js";
 import { db } from "../db/index.js";
 import {
@@ -126,10 +132,18 @@ export function registerUserPasswordResetRoutes(
         `Password reset code generated for user ${username}: ${resetCode} (expires at ${expiresAt.toLocaleString()})`,
       );
 
+      /* >>> VRIT: email the code when SMTP is configured and the user has an email */
+      let emailed = false;
+      if (isMailerConfigured() && user[0].email) {
+        emailed = await sendPasswordResetEmail(user[0].email, resetCode);
+      }
       res.json({
-        message:
-          "Password reset code has been generated and logged. Check docker logs for the code.",
+        message: emailed
+          ? "If the user exists, a password reset code has been emailed."
+          : "Password reset code has been generated and logged. Check docker logs for the code.",
       });
+      return;
+      /* <<< VRIT */
     } catch (err) {
       authLogger.error("Failed to initiate password reset", err);
       res.status(500).json({ error: "Failed to initiate password reset" });

@@ -3,6 +3,9 @@
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Separator } from "@/components/separator";
+/* >>> VRIT BRANDING (see BRANDING.md) */
+import { VritLogo } from "@/components/branding/VritBrand.tsx";
+/* <<< VRIT BRANDING */
 import { Button } from "@/components/button";
 import { Sheet, SheetContent } from "@/components/sheet";
 import { ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
@@ -1083,6 +1086,11 @@ export function AppShell({
   // Sidebar panel content — shared between desktop inline sidebar and mobile sheet
   const sidebarPanelContent = (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {/* >>> VRIT BRANDING (see BRANDING.md) */}
+      <div className="flex items-center justify-center py-2.5 border-b border-edge shrink-0">
+        <VritLogo className="h-5 w-auto opacity-90" />
+      </div>
+      {/* <<< VRIT BRANDING */}
       <div
         className={`flex flex-col flex-1 min-h-0 ${railView === "hosts" ? "" : "hidden"}`}
       >

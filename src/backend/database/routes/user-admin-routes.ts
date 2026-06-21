@@ -36,6 +36,7 @@ export function registerUserAdminRoutes(
         .select({
           id: users.id,
           username: users.username,
+          email: users.email, // VRIT: email-domain allowlist
           isAdmin: users.isAdmin,
           isOidc: users.isOidc,
           passwordHash: users.passwordHash,
@@ -46,6 +47,7 @@ export function registerUserAdminRoutes(
         users: allUsers.map((u) => ({
           userId: u.id,
           username: u.username,
+          email: u.email ?? null, // VRIT
           is_admin: u.isAdmin,
           is_oidc: u.isOidc,
           password_hash: u.passwordHash ? "set" : null,

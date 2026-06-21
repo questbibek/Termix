@@ -25,6 +25,7 @@ import { AccordionSection } from "./AdminSettingsShared";
 export type AdminUser = {
   id: string;
   username: string;
+  email?: string | null; // VRIT: email-domain allowlist
   isAdmin: boolean;
   isOidc: boolean;
   passwordHash?: string;
@@ -136,6 +137,13 @@ export function AdminUsersSection({
                   <span className="text-xs font-semibold truncate max-w-[120px]">
                     {user.username}
                   </span>
+                  {/* >>> VRIT: show registered email */}
+                  {user.email && (
+                    <span className="text-[10px] text-muted-foreground truncate max-w-[160px]">
+                      {user.email}
+                    </span>
+                  )}
+                  {/* <<< VRIT */}
                   <div className="flex items-center gap-1">
                     {user.isAdmin && (
                       <span className="text-[9px] font-semibold px-1 py-px border border-accent-brand/40 bg-accent-brand/10 text-accent-brand">

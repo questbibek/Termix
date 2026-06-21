@@ -1,5 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect, useCallback, useRef } from "react";
+/* >>> VRIT BRANDING (see BRANDING.md) */
+import { VritLogo, VritPoweredBy } from "@/components/branding/VritBrand.tsx";
+/* <<< VRIT BRANDING */
 import { Button } from "@/components/button";
 import { Input } from "@/components/input";
 import { Separator } from "@/components/separator";
@@ -29,6 +32,8 @@ import {
   completePasswordReset,
   getOIDCAuthorizeUrl,
   verifyTOTPLogin,
+  verifySignupOtp,
+  resendSignupOtp,
   getServerConfig,
   saveServerConfig,
   isElectron,
@@ -110,7 +115,13 @@ function storeAuth(username: string) {
   );
 }
 
-type AuthView = "login" | "register" | "reset" | "totp" | "external";
+type AuthView =
+  | "login"
+  | "register"
+  | "reset"
+  | "totp"
+  | "signupOtp" // VRIT: signup email verification
+  | "external";
 type ResetStep = "email" | "code" | "newpass";
 
 interface AuthProps {
@@ -217,6 +228,9 @@ export function Auth({ onLogin }: AuthProps) {
   >({});
 
   const [username, setUsername] = useState("");
+  /* >>> VRIT: email-domain allowlist (see EMAIL_ALLOWLIST.md) */
+  const [email, setEmail] = useState("");
+  /* <<< VRIT */
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(() => {
@@ -228,6 +242,7 @@ export function Auth({ onLogin }: AuthProps) {
   });
 
   const [totpCode, setTotpCode] = useState("");
+  const [signupOtpCode, setSignupOtpCode] = useState(""); // VRIT: signup OTP
   const [totpTempToken, setTotpTempToken] = useState("");
   const totpInputRef = useRef<HTMLInputElement>(null);
 
@@ -465,6 +480,7 @@ export function Auth({ onLogin }: AuthProps) {
 
   function resetAll() {
     setUsername("");
+    setEmail(""); // VRIT
     setPassword("");
     setConfirmPassword("");
     setResetStep("email");
@@ -559,7 +575,18 @@ export function Auth({ onLogin }: AuthProps) {
     }
     setLoading(true);
     try {
-      await registerUser(username.trim(), password);
+      const reg = await registerUser(username.trim(), password, email.trim()); // VRIT: email
+      /* >>> VRIT: signup OTP — if verification is required, go to the code step */
+      if ((reg as { otpRequired?: boolean })?.otpRequired) {
+        setSignupOtpCode("");
+        setView("signupOtp");
+        toast.success(
+          (reg as { message?: string })?.message ||
+            "Check your email for a verification code.",
+        );
+        return;
+      }
+      /* <<< VRIT */
       const res = await loginUser(username.trim(), password, rememberMe);
       if (res.requires_totp) {
         setTotpTempToken(res.temp_token);
@@ -588,6 +615,55 @@ export function Auth({ onLogin }: AuthProps) {
       setLoading(false);
     }
   }
+
+  /* >>> VRIT: verify signup email OTP, then log in (see EMAIL_SETUP.md) */
+  async function handleVerifySignup(e: React.FormEvent) {
+    e.preventDefault();
+    if (signupOtpCode.trim().length !== 6) {
+      toast.error(t("auth.enterCode"));
+      return;
+    }
+    setLoading(true);
+    try {
+      await verifySignupOtp(username.trim(), signupOtpCode.trim());
+      const res = await loginUser(username.trim(), password, rememberMe);
+      if (res.requires_totp) {
+        setTotpTempToken(res.temp_token);
+        setView("totp");
+        return;
+      }
+      const meRes = await getUserInfo();
+      storeAuth(meRes.username || username.trim());
+      toast.success(t("messages.registrationSuccess"));
+      onLogin(
+        meRes.username || username.trim(),
+        meRes.userId || undefined,
+        !!meRes.is_admin,
+      );
+    } catch (err: unknown) {
+      const error = err as {
+        message?: string;
+        response?: { data?: { error?: string } };
+      };
+      toast.error(
+        error?.response?.data?.error ||
+          error?.message ||
+          t("errors.unknownError"),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResendSignupOtp() {
+    try {
+      await resendSignupOtp(username.trim());
+      toast.success("A new verification code has been sent.");
+    } catch {
+      /* generic; ignore */
+    }
+  }
+  /* <<< VRIT */
 
   async function handleTOTP(e: React.FormEvent) {
     e.preventDefault();
@@ -1016,6 +1092,9 @@ export function Auth({ onLogin }: AuthProps) {
             }}
           />
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 px-12">
+            {/* >>> VRIT BRANDING (see BRANDING.md) */}
+            <VritLogo className="h-10 w-auto mb-3" />
+            {/* <<< VRIT BRANDING */}
             <span className="text-4xl font-bold tracking-[0.3em] font-mono">
               TERMIX
             </span>
@@ -1023,6 +1102,9 @@ export function Auth({ onLogin }: AuthProps) {
             <span className="text-[11px] font-mono text-muted-foreground uppercase tracking-[0.25em]">
               {t("auth.tagline")}
             </span>
+            {/* >>> VRIT BRANDING (see BRANDING.md) */}
+            <VritPoweredBy className="mt-6" />
+            {/* <<< VRIT BRANDING */}
           </div>
         </div>
 
@@ -1076,6 +1158,58 @@ export function Auth({ onLogin }: AuthProps) {
                 </form>
               </div>
             )}
+
+            {/* >>> VRIT: signup email verification view (see EMAIL_SETUP.md) */}
+            {view === "signupOtp" && (
+              <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-1">
+                  <h1 className="text-xl font-bold">Verify your email</h1>
+                  <p className="text-xs text-muted-foreground">
+                    We sent a 6-digit code to{" "}
+                    <span className="font-semibold">{email || "your email"}</span>
+                    . Enter it to finish signing up.
+                  </p>
+                </div>
+                <form
+                  onSubmit={handleVerifySignup}
+                  className="flex flex-col gap-4"
+                >
+                  <Field label="Verification code" htmlFor="signup-otp">
+                    <Input
+                      id="signup-otp"
+                      type="text"
+                      placeholder="000000"
+                      maxLength={6}
+                      value={signupOtpCode}
+                      onChange={(e) =>
+                        setSignupOtpCode(e.target.value.replace(/\D/g, ""))
+                      }
+                      disabled={loading}
+                      className="text-center text-2xl tracking-widest font-mono"
+                      autoComplete="one-time-code"
+                      autoFocus
+                    />
+                  </Field>
+                  <Button
+                    type="submit"
+                    className="w-full bg-accent-brand hover:bg-accent-brand/90 text-background font-bold"
+                    disabled={loading || signupOtpCode.trim().length !== 6}
+                  >
+                    {loading ? t("common.loading") : "Verify & continue"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={handleResendSignupOtp}
+                    disabled={loading}
+                  >
+                    Resend code
+                  </Button>
+                </form>
+              </div>
+            )}
+            {/* <<< VRIT */}
 
             {/* Reset password view */}
             {view === "reset" && (
@@ -1455,6 +1589,18 @@ export function Auth({ onLogin }: AuthProps) {
                         />
                       </div>
                     </Field>
+                    {/* >>> VRIT: email for domain allowlist (see EMAIL_ALLOWLIST.md) */}
+                    <Field label="Email" htmlFor="reg-email">
+                      <Input
+                        id="reg-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@vrittechnologies.com"
+                        disabled={loading}
+                      />
+                    </Field>
+                    {/* <<< VRIT */}
                     <Field label={t("common.password")} htmlFor="reg-pass">
                       <PasswordInput
                         id="reg-pass"

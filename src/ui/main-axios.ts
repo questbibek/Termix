@@ -191,6 +191,7 @@ export interface UserInfo {
   totp_enabled: boolean;
   userId: string;
   username: string;
+  email?: string | null; // VRIT: email-domain allowlist
   is_admin: boolean;
   is_oidc: boolean;
   data_unlocked: boolean;
@@ -1625,17 +1626,39 @@ export {
 export async function registerUser(
   username: string,
   password: string,
+  email?: string, // VRIT: email-domain allowlist
 ): Promise<Record<string, unknown>> {
   try {
     const response = await authApi.post("/users/create", {
       username,
       password,
+      email, // VRIT
     });
     return response.data;
   } catch (error) {
     handleApiError(error, "register user");
   }
 }
+
+/* >>> VRIT: signup email OTP verification (see EMAIL_SETUP.md) */
+export async function verifySignupOtp(
+  username: string,
+  code: string,
+): Promise<Record<string, unknown>> {
+  const response = await authApi.post("/users/verify-signup", {
+    username,
+    code,
+  });
+  return response.data;
+}
+
+export async function resendSignupOtp(
+  username: string,
+): Promise<Record<string, unknown>> {
+  const response = await authApi.post("/users/resend-signup-otp", { username });
+  return response.data;
+}
+/* <<< VRIT */
 
 export async function loginUser(
   username: string,

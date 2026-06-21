@@ -150,6 +150,8 @@ async function initializeCompleteDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username TEXT NOT NULL,
+        email TEXT, -- VRIT: email-domain allowlist
+        email_verified INTEGER NOT NULL DEFAULT 1, -- VRIT: signup OTP gate
         password_hash TEXT NOT NULL,
         is_admin INTEGER NOT NULL DEFAULT 0,
         is_oidc INTEGER NOT NULL DEFAULT 0,
@@ -1214,6 +1216,30 @@ const migrateSchema = () => {
     }
   }
 
+  /* >>> VRIT: users columns for allowlist + signup OTP (see EMAIL_ALLOWLIST.md / EMAIL_SETUP.md) */
+  const vritUserMigrations: Array<{ column: string; sql: string }> = [
+    { column: "email", sql: "ALTER TABLE users ADD COLUMN email TEXT" },
+    {
+      column: "email_verified",
+      sql: "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1",
+    },
+  ];
+  for (const m of vritUserMigrations) {
+    try {
+      sqlite.prepare(`SELECT ${m.column} FROM users LIMIT 1`).get();
+    } catch {
+      try {
+        sqlite.exec(m.sql);
+      } catch (alterError) {
+        databaseLogger.warn(`Failed to add users.${m.column} column`, {
+          operation: "schema_migration",
+          error: alterError,
+        });
+      }
+    }
+  }
+  /* <<< VRIT */
+
   // Copy unencrypted username/domain into protocol-specific columns for old guac hosts.
   // Passwords are handled via the legacy field name fallback in lazy-field-encryption.ts.
   const usernameDomainBackfills = [
@@ -1763,6 +1789,17 @@ async function handlePostInitFileEncryption() {
 async function initializeDatabase(): Promise<void> {
   await initializeCompleteDatabase();
   await handlePostInitFileEncryption();
+
+  // Fork addition: off-site backups to Cloudflare R2 (no-op unless BACKUP_ENABLED=true).
+  // Dynamic import avoids a circular dependency with this module.
+  import("../../utils/r2-backup.js")
+    .then((m) => m.startR2BackupScheduler())
+    .catch((error) =>
+      databaseLogger.warn("Failed to start R2 backup scheduler", {
+        operation: "r2_backup_init_failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+    );
 }
 
 export { initializeDatabase };

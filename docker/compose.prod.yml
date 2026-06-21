@@ -1,0 +1,56 @@
+# Production compose for the VPS — runs YOUR fork's image (not upstream's).
+# Lives in your fork so `git pull` on the VPS keeps it current.
+# Override the image tag if needed:  TERMIX_IMAGE=ghcr.io/questbibek/termix:<sha> docker compose -f docker/compose.prod.yml up -d
+services:
+  termix:
+    image: ${TERMIX_IMAGE:-ghcr.io/questbibek/termix:latest}
+    container_name: termix
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - termix-data:/app/data
+    environment:
+      PORT: "8080"
+      GUACD_HOST: "guacd"
+      # R2 off-site backups (code-level). Values come from /opt/termix/.env,
+      # which `docker compose` auto-loads. No-op unless BACKUP_ENABLED=true.
+      BACKUP_ENABLED: "${BACKUP_ENABLED:-false}"
+      BACKUP_INTERVAL_HOURS: "${BACKUP_INTERVAL_HOURS:-24}"
+      BACKUP_KEEP_COUNT: "${BACKUP_KEEP_COUNT:-15}"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-}"
+      R2_PREFIX: "${R2_PREFIX:-data-backups}"
+      # Restrict self-registration to these email domains (comma-separated).
+      # Empty = open registration (upstream default). See EMAIL_ALLOWLIST.md.
+      ALLOWED_EMAIL_DOMAINS: "${ALLOWED_EMAIL_DOMAINS:-}"
+      # SMTP for emailed password-reset codes + signup OTP (see EMAIL_SETUP.md).
+      # If unset: reset codes go to docker logs and signup OTP is off.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_SECURE: "${SMTP_SECURE:-}"
+      SIGNUP_OTP_ENABLED: "${SIGNUP_OTP_ENABLED:-true}"
+    depends_on:
+      - guacd
+    networks:
+      - termix-net
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: guacd
+    restart: unless-stopped
+    networks:
+      - termix-net
+
+volumes:
+  termix-data:
+    driver: local
+
+networks:
+  termix-net:
+    driver: bridge

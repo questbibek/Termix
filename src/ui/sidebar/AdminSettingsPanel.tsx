@@ -179,6 +179,7 @@ export function AdminSettingsPanel() {
           u.map((user) => ({
             id: user.userId,
             username: user.username,
+            email: user.email ?? null, // VRIT: email-domain allowlist
             isAdmin: user.is_admin,
             isOidc: user.is_oidc,
             passwordHash: user.password_hash,

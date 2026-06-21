@@ -2,6 +2,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/button.tsx";
 import { Input } from "@/components/input.tsx";
+/* >>> VRIT BRANDING (see BRANDING.md) */
+import { VritLogo, VritPoweredBy } from "@/components/branding/VritBrand.tsx";
+/* <<< VRIT BRANDING */
 import { PasswordInput } from "@/components/password-input.tsx";
 import { Label } from "@/components/label.tsx";
 import { Checkbox } from "@/components/checkbox.tsx";
@@ -1157,6 +1160,9 @@ export function Auth({
           }}
         >
           <div className="relative text-center px-8">
+            {/* >>> VRIT BRANDING (see BRANDING.md) */}
+            <VritLogo className="h-12 w-auto mx-auto mb-8" />
+            {/* <<< VRIT BRANDING */}
             <div
               className="text-7xl font-bold tracking-wider mb-4 text-foreground"
               style={{
@@ -1169,6 +1175,9 @@ export function Auth({
             <div className="text-lg text-muted-foreground tracking-widest font-light">
               {t("auth.tagline")}
             </div>
+            {/* >>> VRIT BRANDING (see BRANDING.md) */}
+            <VritPoweredBy className="mt-10" />
+            {/* <<< VRIT BRANDING */}
           </div>
         </div>
 

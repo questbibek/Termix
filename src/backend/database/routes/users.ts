@@ -7,6 +7,19 @@ import bcrypt from "bcryptjs";
 import { nanoid } from "nanoid";
 import type { Request, Response } from "express";
 import { authLogger } from "../../utils/logger.js";
+/* >>> VRIT: email-domain allowlist (see EMAIL_ALLOWLIST.md) */
+import {
+  isEmailAllowlistEnabled,
+  isValidEmail,
+  isEmailDomainAllowed,
+} from "../../utils/email-allowlist.js";
+/* email OTP signup verification (see EMAIL_SETUP.md) */
+import {
+  isSignupOtpEnabled,
+  generateOtpCode,
+  sendSignupOtpEmail,
+} from "../../utils/mailer.js";
+/* <<< VRIT */
 import { AuthManager } from "../../utils/auth-manager.js";
 import { DataCrypto } from "../../utils/data-crypto.js";
 import {
@@ -101,7 +114,7 @@ router.post("/create", async (req, res) => {
     });
   }
 
-  const { username, password } = req.body;
+  const { username, password, email } = req.body;
   authLogger.info("User registration attempt", {
     operation: "user_register_attempt",
     username,
@@ -120,6 +133,35 @@ router.post("/create", async (req, res) => {
       .status(400)
       .json({ error: "Username and password are required" });
   }
+
+  /* >>> VRIT: email-domain allowlist (see EMAIL_ALLOWLIST.md). Skips the first
+     user so the initial admin can always bootstrap. No-op unless
+     ALLOWED_EMAIL_DOMAINS is set. */
+  if (isEmailAllowlistEnabled()) {
+    const userCount =
+      (
+        db.$client
+          .prepare("SELECT COUNT(*) as count FROM users")
+          .get() as { count?: number }
+      )?.count || 0;
+    if (userCount > 0) {
+      if (!isValidEmail(email)) {
+        return res
+          .status(400)
+          .json({ error: "A valid email address is required to register" });
+      }
+      if (!isEmailDomainAllowed(email)) {
+        authLogger.warn("Registration blocked - email domain not allowed", {
+          operation: "user_register_blocked",
+          username,
+        });
+        return res.status(403).json({
+          error: "Registration is restricted to approved email domains",
+        });
+      }
+    }
+  }
+  /* <<< VRIT */
 
   try {
     const existing = await db
@@ -146,11 +188,13 @@ router.post("/create", async (req, res) => {
       const first = (countResult?.count || 0) === 0;
       db.$client
         .prepare(
-          "INSERT INTO users (id, username, password_hash, is_admin, is_oidc, client_id, client_secret, issuer_url, authorization_url, token_url, identifier_path, name_path, scopes, totp_secret, totp_enabled, totp_backup_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          // VRIT: added `email` column
+          "INSERT INTO users (id, username, email, password_hash, is_admin, is_oidc, client_id, client_secret, issuer_url, authorization_url, token_url, identifier_path, name_path, scopes, totp_secret, totp_enabled, totp_backup_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           id,
           username,
+          isValidEmail(email) ? email.trim().toLowerCase() : null, // VRIT
           password_hash,
           first ? 1 : 0,
           0,
@@ -244,6 +288,37 @@ router.post("/create", async (req, res) => {
       success: true,
     });
 
+    /* >>> VRIT: signup email OTP. New non-first users with an email must verify
+       before they can log in (see EMAIL_SETUP.md). No-op unless SMTP configured. */
+    if (isSignupOtpEnabled() && !isFirstUser && isValidEmail(email)) {
+      const code = generateOtpCode();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      db.$client
+        .prepare("UPDATE users SET email_verified = 0 WHERE id = ?")
+        .run(id);
+      db.$client
+        .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+        .run(`signup_otp_${id}`, JSON.stringify({ code, expiresAt }));
+      const sent = await sendSignupOtpEmail(email.trim().toLowerCase(), code);
+      if (!sent) {
+        authLogger.info(
+          `Signup OTP for ${username}: ${code} (SMTP unavailable, logged as fallback)`,
+        );
+      }
+      try {
+        const { saveMemoryDatabaseToFile } = await import("../db/index.js");
+        await saveMemoryDatabaseToFile();
+      } catch {
+        /* best-effort persist */
+      }
+      return res.json({
+        message: "Verify your email to finish signing up.",
+        otpRequired: true,
+        username,
+      });
+    }
+    /* <<< VRIT */
+
     res.json({
       message: "User created",
       is_admin: isFirstUser,
@@ -254,6 +329,93 @@ router.post("/create", async (req, res) => {
     res.status(500).json({ error: "Failed to create user" });
   }
 });
+
+/* >>> VRIT: verify signup email OTP, and resend it (see EMAIL_SETUP.md) */
+router.post("/verify-signup", async (req, res) => {
+  const { username, code } = req.body;
+  if (!isNonEmptyString(username) || !isNonEmptyString(code)) {
+    return res.status(400).json({ error: "Username and code are required" });
+  }
+  try {
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
+    if (!user || user.length === 0) {
+      return res.status(400).json({ error: "Invalid code" });
+    }
+    if (user[0].emailVerified) {
+      return res.json({ success: true, message: "Email already verified" });
+    }
+    const row = db.$client
+      .prepare("SELECT value FROM settings WHERE key = ?")
+      .get(`signup_otp_${user[0].id}`) as { value?: string } | undefined;
+    if (!row?.value) {
+      return res.status(400).json({ error: "Code expired, request a new one" });
+    }
+    const { code: storedCode, expiresAt } = JSON.parse(row.value) as {
+      code: string;
+      expiresAt: string;
+    };
+    if (new Date(expiresAt).getTime() < Date.now()) {
+      return res.status(400).json({ error: "Code expired, request a new one" });
+    }
+    if (storedCode !== code.trim()) {
+      return res.status(400).json({ error: "Invalid code" });
+    }
+    db.$client
+      .prepare("UPDATE users SET email_verified = 1 WHERE id = ?")
+      .run(user[0].id);
+    db.$client
+      .prepare("DELETE FROM settings WHERE key = ?")
+      .run(`signup_otp_${user[0].id}`);
+    try {
+      const { saveMemoryDatabaseToFile } = await import("../db/index.js");
+      await saveMemoryDatabaseToFile();
+    } catch {
+      /* best-effort persist */
+    }
+    authLogger.success("Signup email verified", {
+      operation: "signup_otp_verified",
+      username,
+    });
+    return res.json({ success: true, message: "Email verified" });
+  } catch (err) {
+    authLogger.error("Failed to verify signup OTP", err);
+    return res.status(500).json({ error: "Failed to verify code" });
+  }
+});
+
+router.post("/resend-signup-otp", async (req, res) => {
+  const { username } = req.body;
+  if (!isNonEmptyString(username)) {
+    return res.status(400).json({ error: "Username is required" });
+  }
+  try {
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
+    // Generic response — don't leak which usernames exist.
+    if (!user || user.length === 0 || user[0].emailVerified || !user[0].email) {
+      return res.json({ message: "If applicable, a new code has been sent." });
+    }
+    const code = generateOtpCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    db.$client
+      .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run(`signup_otp_${user[0].id}`, JSON.stringify({ code, expiresAt }));
+    const sent = await sendSignupOtpEmail(user[0].email, code);
+    if (!sent) {
+      authLogger.info(`Signup OTP resend for ${username}: ${code} (logged)`);
+    }
+    return res.json({ message: "If applicable, a new code has been sent." });
+  } catch (err) {
+    authLogger.error("Failed to resend signup OTP", err);
+    return res.status(500).json({ error: "Failed to resend code" });
+  }
+});
+/* <<< VRIT */
 
 /**
  * @openapi
@@ -1572,6 +1734,16 @@ router.post("/login", async (req, res) => {
       });
       return res.status(401).json({ error: "Invalid username or password" });
     }
+
+    /* >>> VRIT: block login until signup email is verified (see EMAIL_SETUP.md) */
+    if (isSignupOtpEnabled() && !userRecord.emailVerified) {
+      return res.status(403).json({
+        error: "Please verify your email before logging in.",
+        otpRequired: true,
+        username: userRecord.username,
+      });
+    }
+    /* <<< VRIT */
 
     try {
       const kekSalt = await db
