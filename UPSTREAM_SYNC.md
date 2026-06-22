@@ -4,6 +4,10 @@ This is a **fork** of [Termix-SSH/Termix](https://github.com/Termix-SSH/Termix)
 maintained by Vrit Tech. We track upstream for features, bug fixes, and security
 patches, while keeping a small set of our own additions on top.
 
+> **Before committing/pushing any merge, run every gate in
+> [MERGE_CHECKLIST.md](MERGE_CHECKLIST.md).** Pushing `vrit` auto-deploys to
+> production, so a merge isn't done until all checks are green.
+
 ## Branch model (two-branch / clean mirror)
 
 | Branch | Role |
