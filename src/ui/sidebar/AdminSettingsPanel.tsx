@@ -9,7 +9,7 @@ import {
   deleteUser,
   revokeAllUserSessions,
   createRole,
-  registerUser,
+  adminCreateUser,
   makeUserAdmin,
   removeAdminStatus,
   getRegistrationAllowed,
@@ -28,6 +28,8 @@ import {
   updateGuacamoleSettings,
   getOidcAutoProvision,
   updateOidcAutoProvision,
+  getOidcSilentLoginDefault,
+  updateOidcSilentLoginDefault,
   getCommandHistoryEnabled,
   updateCommandHistoryEnabled,
   isElectron,
@@ -36,7 +38,16 @@ import {
 import {
   getTailscaleSettings,
   updateTailscaleSettings,
+  getHostDefaults,
+  updateHostDefaults,
+  type HostDefaults,
 } from "@/api/settings-api";
+import {
+  getAcmeSslSettings,
+  updateAcmeSslSettings,
+  requestAcmeCertificate,
+  type AcmeSettings,
+} from "@/api/acme-ssl-api";
 import {
   getAdminSSOProviders,
   updateSSOProvider,
@@ -58,7 +69,9 @@ import { getBasePath } from "@/lib/base-path";
 import {
   AdminDatabaseSection,
   AdminGeneralSettingsSection,
+  AdminHostDefaultsSection,
   AdminSSOSection,
+  AdminSSLSection,
 } from "./AdminSettingsSections";
 import { SSOProviderDialog } from "./SSOProviderDialog";
 import { AdminApiKeysSection } from "./AdminApiKeysSection";
@@ -67,6 +80,7 @@ import {
   AdminCreateUserDialog,
   AdminEditUserDialog,
   AdminLinkAccountDialog,
+  AdminUnlinkAccountDialog,
 } from "./AdminUserDialogs";
 
 type ApiErrorLike = {
@@ -97,9 +111,11 @@ export function AdminSettingsPanel() {
   const [logLevel, setLogLevel] = useState("info");
   const [tailscaleApiKey, setTailscaleApiKey] = useState("");
   const [commandHistoryEnabled, setCommandHistoryEnabled] = useState(true);
+  const [hostDefaults, setHostDefaults] = useState<HostDefaults>({});
 
   // SSO / auto-provision state
   const [oidcAutoProvision, setOidcAutoProvision] = useState(false);
+  const [oidcSilentLoginDefault, setOidcSilentLoginDefault] = useState(false);
   const [ssoProviders, setSsoProviders] = useState<SSOProvider[]>([]);
   const [ssoDialogOpen, setSsoDialogOpen] = useState(false);
   const [ssoDialogProvider, setSsoDialogProvider] =
@@ -108,7 +124,6 @@ export function AdminSettingsPanel() {
   // Create user dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
-  const [newEmail, setNewEmail] = useState(""); // VRIT: admin-set email
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [createUserLoading, setCreateUserLoading] = useState(false);
@@ -126,6 +141,13 @@ export function AdminSettingsPanel() {
     id: string;
     username: string;
     isOidc: boolean;
+  } | null>(null);
+
+  // Unlink account dialog
+  const [unlinkAccountOpen, setUnlinkAccountOpen] = useState(false);
+  const [unlinkAccountTarget, setUnlinkAccountTarget] = useState<{
+    id: string;
+    username: string;
   } | null>(null);
 
   // Create role form
@@ -147,6 +169,22 @@ export function AdminSettingsPanel() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+
+  // ACME SSL state
+  const defaultAcmeSettings: AcmeSettings = {
+    enabled: false,
+    domain: "",
+    email: "",
+    challengeType: "http-webroot",
+    cloudflareToken: "",
+    lastIssuedAt: null,
+    certStatus: "none",
+    certExpiresAt: null,
+  };
+  const [acmeSettings, setAcmeSettings] =
+    useState<AcmeSettings>(defaultAcmeSettings);
+  const [cloudflareTokenDraft, setCloudflareTokenDraft] = useState("");
+  const [acmeRequesting, setAcmeRequesting] = useState(false);
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [sessions, setSessions] = useState<AdminSession[]>([]);
@@ -219,6 +257,7 @@ export function AdminSettingsPanel() {
         level,
         guac,
         oidcProv,
+        oidcSilent,
         tailscale,
         cmdHistory,
       ] = await Promise.allSettled([
@@ -230,6 +269,7 @@ export function AdminSettingsPanel() {
         getLogLevel(),
         getGuacamoleSettings(),
         getOidcAutoProvision(),
+        getOidcSilentLoginDefault(),
         getTailscaleSettings(),
         getCommandHistoryEnabled(),
       ]);
@@ -239,6 +279,8 @@ export function AdminSettingsPanel() {
         setAllowPasswordLogin(pwLogin.value.allowed);
       if (oidcProv.status === "fulfilled")
         setOidcAutoProvision(oidcProv.value.enabled);
+      if (oidcSilent.status === "fulfilled")
+        setOidcSilentLoginDefault(oidcSilent.value.enabled);
       if (pwReset.status === "fulfilled") setAllowPasswordReset(pwReset.value);
       if (timeout.status === "fulfilled")
         setSessionTimeout(String(timeout.value.timeoutHours));
@@ -260,6 +302,14 @@ export function AdminSettingsPanel() {
     } catch {
       // non-fatal
     }
+
+    getHostDefaults()
+      .then((d) => setHostDefaults(d))
+      .catch(() => {});
+
+    getAcmeSslSettings()
+      .then((s) => setAcmeSettings(s))
+      .catch(() => {});
   }
 
   async function loadSSOProviders() {
@@ -273,6 +323,15 @@ export function AdminSettingsPanel() {
 
   function toggle(id: AdminSection) {
     setOpenSection((prev) => (prev === id ? null : id));
+  }
+
+  async function handleSaveHostDefaults() {
+    try {
+      await updateHostDefaults(hostDefaults);
+      toast.success(t("admin.hostDefaultsSaved"));
+    } catch {
+      toast.error(t("admin.hostDefaultsSaveFailed"));
+    }
   }
 
   async function handleToggleRegistration() {
@@ -291,9 +350,10 @@ export function AdminSettingsPanel() {
     setAllowPasswordLogin(newVal);
     try {
       await updatePasswordLoginAllowed(newVal);
-    } catch {
+    } catch (e) {
       setAllowPasswordLogin(!newVal);
-      toast.error(t("admin.updatePasswordLoginFailed"));
+      const msg = (e as ApiErrorLike).response?.data?.error;
+      toast.error(msg || t("admin.updatePasswordLoginFailed"));
     }
   }
 
@@ -305,6 +365,17 @@ export function AdminSettingsPanel() {
     } catch {
       setOidcAutoProvision(!newVal);
       toast.error(t("admin.updateOidcAutoProvisionFailed"));
+    }
+  }
+
+  async function handleToggleOidcSilentLoginDefault() {
+    const newVal = !oidcSilentLoginDefault;
+    setOidcSilentLoginDefault(newVal);
+    try {
+      await updateOidcSilentLoginDefault(newVal);
+    } catch {
+      setOidcSilentLoginDefault(!newVal);
+      toast.error(t("admin.updateOidcSilentLoginDefaultFailed"));
     }
   }
 
@@ -437,6 +508,50 @@ export function AdminSettingsPanel() {
     }
   }
 
+  async function handleSaveAcmeSettings() {
+    try {
+      const payload: Parameters<typeof updateAcmeSslSettings>[0] = {
+        enabled: acmeSettings.enabled,
+        domain: acmeSettings.domain,
+        email: acmeSettings.email,
+        challengeType: acmeSettings.challengeType,
+        ...(cloudflareTokenDraft && { cloudflareToken: cloudflareTokenDraft }),
+      };
+      const updated = await updateAcmeSslSettings(payload);
+      setAcmeSettings(updated);
+      setCloudflareTokenDraft("");
+      toast.success(t("admin.sslSaved"));
+    } catch {
+      toast.error(t("admin.sslSaveFailed"));
+    }
+  }
+
+  async function handleRequestAcmeCertificate() {
+    if (!acmeSettings.domain || !acmeSettings.email) {
+      toast.error(t("admin.sslRequiresDomain"));
+      return;
+    }
+    setAcmeRequesting(true);
+    try {
+      if (cloudflareTokenDraft) {
+        await updateAcmeSslSettings({
+          domain: acmeSettings.domain,
+          email: acmeSettings.email,
+          challengeType: acmeSettings.challengeType,
+          cloudflareToken: cloudflareTokenDraft,
+        });
+        setCloudflareTokenDraft("");
+      }
+      const result = await requestAcmeCertificate();
+      setAcmeSettings(result);
+      toast.success(t("admin.sslRequestCertSuccess"));
+    } catch (e) {
+      toast.error(apiErrorMessage(e, t("admin.sslRequestCertFailed")));
+    } finally {
+      setAcmeRequesting(false);
+    }
+  }
+
   function handleProviderSaved(saved: SSOProvider) {
     setSsoProviders((prev) => {
       const idx = prev.findIndex((p) => p.id === saved.id);
@@ -450,13 +565,8 @@ export function AdminSettingsPanel() {
   }
 
   async function handleCreateUser() {
-    if (!newUsername.trim() || !newPassword.trim() || !newEmail.trim()) {
+    if (!newUsername.trim() || !newPassword.trim()) {
       toast.error(t("admin.createUserRequired"));
-      return;
-    }
-    // VRIT: validate the admin-entered email
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) {
-      toast.error("Please enter a valid email address");
       return;
     }
     if (newPassword.length < 6) {
@@ -465,11 +575,10 @@ export function AdminSettingsPanel() {
     }
     setCreateUserLoading(true);
     try {
-      await registerUser(newUsername.trim(), newPassword, newEmail.trim()); // VRIT: email
+      await adminCreateUser(newUsername.trim(), newPassword);
       toast.success(t("admin.createUserSuccess", { username: newUsername }));
       setCreateUserOpen(false);
       setNewUsername("");
-      setNewEmail("");
       setNewPassword("");
       loadUsers();
     } catch (e: unknown) {
@@ -707,6 +816,8 @@ export function AdminSettingsPanel() {
         handleTogglePasswordLogin={handleTogglePasswordLogin}
         oidcAutoProvision={oidcAutoProvision}
         handleToggleOidcAutoProvision={handleToggleOidcAutoProvision}
+        oidcSilentLoginDefault={oidcSilentLoginDefault}
+        handleToggleOidcSilentLoginDefault={handleToggleOidcSilentLoginDefault}
         allowPasswordReset={allowPasswordReset}
         handleTogglePasswordReset={handleTogglePasswordReset}
         commandHistoryEnabled={commandHistoryEnabled}
@@ -759,6 +870,8 @@ export function AdminSettingsPanel() {
         setEditUserOpen={setEditUserOpen}
         setLinkAccountTarget={setLinkAccountTarget}
         setLinkAccountOpen={setLinkAccountOpen}
+        setUnlinkAccountTarget={setUnlinkAccountTarget}
+        setUnlinkAccountOpen={setUnlinkAccountOpen}
       />
 
       <AdminSessionsSection
@@ -786,6 +899,14 @@ export function AdminSettingsPanel() {
         createRoleLoading={createRoleLoading}
       />
 
+      <AdminHostDefaultsSection
+        open={openSection === "host-defaults"}
+        onToggle={() => toggle("host-defaults")}
+        defaults={hostDefaults}
+        setDefaults={setHostDefaults}
+        handleSaveDefaults={handleSaveHostDefaults}
+      />
+
       <AdminDatabaseSection
         open={openSection === "database"}
         onToggle={() => toggle("database")}
@@ -795,6 +916,18 @@ export function AdminSettingsPanel() {
         importLoading={importLoading}
         handleExportDatabase={handleExportDatabase}
         handleImportDatabase={handleImportDatabase}
+      />
+
+      <AdminSSLSection
+        open={openSection === "ssl"}
+        onToggle={() => toggle("ssl")}
+        settings={acmeSettings}
+        setSettings={setAcmeSettings}
+        cloudflareTokenDraft={cloudflareTokenDraft}
+        setCloudflareTokenDraft={setCloudflareTokenDraft}
+        requesting={acmeRequesting}
+        handleSave={handleSaveAcmeSettings}
+        handleRequest={handleRequestAcmeCertificate}
       />
 
       <AdminApiKeysSection
@@ -829,8 +962,6 @@ export function AdminSettingsPanel() {
         onOpenChange={setCreateUserOpen}
         newUsername={newUsername}
         setNewUsername={setNewUsername}
-        newEmail={newEmail}
-        setNewEmail={setNewEmail}
         newPassword={newPassword}
         setNewPassword={setNewPassword}
         showNewPassword={showNewPassword}
@@ -859,6 +990,21 @@ export function AdminSettingsPanel() {
         linkAccountTarget={linkAccountTarget}
         setUsers={setUsers}
         users={users}
+      />
+
+      <AdminUnlinkAccountDialog
+        open={unlinkAccountOpen}
+        onOpenChange={setUnlinkAccountOpen}
+        unlinkAccountTarget={unlinkAccountTarget}
+        onSuccess={(userId) =>
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.id === userId
+                ? { ...u, isOidc: false, passwordHash: undefined }
+                : u,
+            ),
+          )
+        }
       />
     </div>
   );

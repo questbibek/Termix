@@ -696,6 +696,7 @@ const migrateSchema = () => {
   addColumnIfNotExists("user_preferences", "disable_update_check", "INTEGER");
   addColumnIfNotExists("user_preferences", "confirm_tab_close", "INTEGER");
   addColumnIfNotExists("user_preferences", "hidden_rail_tabs", "TEXT");
+  addColumnIfNotExists("user_preferences", "compact_host_view", "INTEGER");
 
   addColumnIfNotExists("users", "is_admin", "INTEGER NOT NULL DEFAULT 0");
 
@@ -754,6 +755,11 @@ const migrateSchema = () => {
     "ssh_data",
     "enable_file_manager",
     "INTEGER NOT NULL DEFAULT 1",
+  );
+  addColumnIfNotExists(
+    "ssh_data",
+    "scp_legacy",
+    "INTEGER NOT NULL DEFAULT 0",
   );
   addColumnIfNotExists("ssh_data", "default_path", "TEXT");
   addColumnIfNotExists(
@@ -1199,6 +1205,14 @@ const migrateSchema = () => {
     { column: "vnc_user", sql: "ALTER TABLE ssh_data ADD COLUMN vnc_user TEXT" },
     { column: "telnet_user", sql: "ALTER TABLE ssh_data ADD COLUMN telnet_user TEXT" },
     { column: "telnet_password", sql: "ALTER TABLE ssh_data ADD COLUMN telnet_password TEXT" },
+    { column: "rdp_credential_id", sql: "ALTER TABLE ssh_data ADD COLUMN rdp_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL" },
+    { column: "vnc_credential_id", sql: "ALTER TABLE ssh_data ADD COLUMN vnc_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL" },
+    { column: "wol_broadcast_address", sql: "ALTER TABLE ssh_data ADD COLUMN wol_broadcast_address TEXT" },
+    { column: "use_warpgate", sql: "ALTER TABLE ssh_data ADD COLUMN use_warpgate INTEGER NOT NULL DEFAULT 0" },
+    { column: "telnet_credential_id", sql: "ALTER TABLE ssh_data ADD COLUMN telnet_credential_id INTEGER REFERENCES ssh_credentials(id) ON DELETE SET NULL" },
+    { column: "rdp_auth_type", sql: "ALTER TABLE ssh_data ADD COLUMN rdp_auth_type TEXT" },
+    { column: "vnc_auth_type", sql: "ALTER TABLE ssh_data ADD COLUMN vnc_auth_type TEXT" },
+    { column: "telnet_auth_type", sql: "ALTER TABLE ssh_data ADD COLUMN telnet_auth_type TEXT" },
   ];
 
   for (const migration of sshDataMigrations) {
@@ -1239,6 +1253,23 @@ const migrateSchema = () => {
     }
   }
   /* <<< VRIT */
+
+  // Migrate legacy authType="warpgate" hosts to useWarpgate=1 with authType="none"
+  try {
+    const result = sqlite
+      .prepare("UPDATE ssh_data SET use_warpgate = 1, auth_type = 'none' WHERE auth_type = 'warpgate'")
+      .run();
+    if (result.changes > 0) {
+      databaseLogger.info(`Migrated ${result.changes} host(s) from authType='warpgate' to useWarpgate=true`, {
+        operation: "warpgate_auth_migration",
+      });
+    }
+  } catch (e) {
+    databaseLogger.warn("Failed to migrate legacy warpgate authType hosts", {
+      operation: "warpgate_auth_migration",
+      error: e,
+    });
+  }
 
   // Copy unencrypted username/domain into protocol-specific columns for old guac hosts.
   // Passwords are handled via the legacy field name fallback in lazy-field-encryption.ts.
