@@ -159,6 +159,7 @@ export async function bulkUpdateSSHHosts(
   }
 }
 
+// VRIT: fork addition (host duplicate). Not in upstream. Keep on merge.
 export async function duplicateSSHHost(hostId: number): Promise<SSHHost> {
   try {
     const response = await sshHostApi.post(`/db/host/${hostId}/duplicate`);

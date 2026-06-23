@@ -50,6 +50,7 @@ export async function updateCredential(
   }
 }
 
+// VRIT: fork addition (credential duplicate). Not in upstream. Keep on merge.
 export async function duplicateCredential(
   credentialId: number,
 ): Promise<Record<string, unknown>> {

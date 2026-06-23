@@ -30,7 +30,8 @@ For each conflict decide **drop** vs **keep** using this rule:
 | If the conflict is… | Action |
 |---|---|
 | A patch upstream now implements officially (admin-create, pw-login fix, SSO URL fix, storage default, folder picker, etc.) | **Take upstream** (`>>>>>>> main` side); delete our now-redundant code, including any orphaned state/props/imports it leaves behind. |
-| One of our **unique** features (branding, R2 backup, email-domain allowlist, signup-OTP/SMTP, terminal padding, CI) | **Keep ours**, merged *with* upstream's surrounding changes (don't clobber new upstream code). |
+| One of our **unique** features (branding, R2 backup, email-domain allowlist, signup-OTP/SMTP, terminal padding, host/credential duplicate, credential picker, snippet folder picker, CI) | **Keep ours**, merged *with* upstream's surrounding changes (don't clobber new upstream code). Look for `VRIT:` markers / the grep tokens in UPSTREAM_SYNC.md. |
+| A `.github/workflows/*` file with `runs-on: blacksmith-*` or `useblacksmith/*` | **Keep ours** — swap to GitHub-hosted (`ubuntu/windows/macos-latest`, `docker/*` actions). Blacksmith jobs queue forever on our fork. See UPSTREAM_SYNC.md. |
 | `package.json` | Keep our deps (`@aws-sdk/*`, `tar`, `nodemailer`) **and** take upstream's version bumps. |
 | `package-lock.json` | Don't hand-merge: `git checkout --theirs -- package-lock.json && npm install --package-lock-only`. |
 
@@ -53,6 +54,13 @@ grep -q "startR2BackupScheduler" src/backend/database/db/index.ts && echo "ok R2
 grep -q "verify-signup" src/backend/database/routes/users.ts && echo "ok signup-otp"
 grep -q "isEmailAllowlistEnabled" src/backend/database/routes/users.ts && echo "ok allowlist"
 grep -q "email_verified" src/backend/database/db/schema.ts && echo "ok email_verified col"
+
+# (b2) fork UX features survived + no Blacksmith runner crept back in
+git grep -n "blacksmith" -- .github/workflows/ ; echo "↑ must be empty (we run GitHub-hosted)"
+grep -q "duplicateSSHHost" src/ui/api/ssh-host-management-api.ts && echo "ok host duplicate"
+grep -q "duplicateCredential" src/ui/api/credentials-api.ts && echo "ok credential duplicate"
+grep -q "CredentialPicker" src/ui/sidebar/HostEditor.tsx && echo "ok credential picker"
+grep -q "SnippetFolderPicker" src/ui/sidebar/SnippetsPanel.tsx && echo "ok snippet folder picker"
 
 # (c) backend typecheck — MUST be clean
 npx tsc -p tsconfig.node.json --noEmit && echo "BACKEND PASS"

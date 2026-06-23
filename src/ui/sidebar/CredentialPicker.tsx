@@ -4,9 +4,12 @@ import { ChevronsUpDown, KeyRound, Search, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 
 /**
+ * VRIT: fork addition — not in upstream. See UPSTREAM_SYNC.md (keep on merge).
+ *
  * Searchable credential selector for the host editor — the same combobox
  * pattern as FolderPathPicker, so a long credential list can be filtered by
- * name or username instead of scrolling a native <select>.
+ * name or username instead of scrolling a native <select>. Also shows a
+ * KEY/PWD badge so similarly-named credentials are distinguishable.
  */
 type CredentialOption = {
   id: string;

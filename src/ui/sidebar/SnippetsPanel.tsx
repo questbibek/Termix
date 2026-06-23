@@ -133,6 +133,7 @@ function FolderIconEl({
   }
 }
 
+// VRIT: fork addition — not in upstream. See UPSTREAM_SYNC.md (keep on merge).
 // Searchable folder picker for the snippet dialog — mirrors the folder picker
 // used in the host/credential editors, adapted to snippets' flat (non-nested)
 // folders. Typing a new name and confirming persists the folder (with default

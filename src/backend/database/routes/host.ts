@@ -456,6 +456,8 @@ router.post(
   },
 );
 
+// VRIT: fork addition — server-side host duplicate (preserves secrets).
+// Not in upstream. See UPSTREAM_SYNC.md. Keep on merge.
 /**
  * @openapi
  * /ssh/db/host/{id}/duplicate:

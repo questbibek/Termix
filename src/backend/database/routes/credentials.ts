@@ -1062,6 +1062,8 @@ router.put(
   },
 );
 
+// VRIT: fork addition — server-side credential duplicate (preserves secrets).
+// Not in upstream. See UPSTREAM_SYNC.md. Keep on merge.
 /**
  * @openapi
  * /credentials/{id}/duplicate:
