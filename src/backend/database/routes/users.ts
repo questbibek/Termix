@@ -1503,7 +1503,8 @@ router.get("/oidc/callback", async (req, res) => {
       const isDualAuth =
         user[0].passwordHash && user[0].passwordHash.trim() !== "";
 
-      if (!isDualAuth) {
+      // VRIT: don't clobber a username an admin has manually overridden.
+      if (!isDualAuth && !user[0].usernameOverridden) {
         await db
           .update(users)
           .set({ username: name })

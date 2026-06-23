@@ -16,6 +16,11 @@ export const users = sqliteTable("users", {
   isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
 
   isOidc: integer("is_oidc", { mode: "boolean" }).notNull().default(false),
+  // VRIT: set when an admin manually renames the user. Blocks OIDC login from
+  // overwriting the username with the IdP-supplied name on the next sign-in.
+  usernameOverridden: integer("username_overridden", { mode: "boolean" })
+    .notNull()
+    .default(false),
   oidcIdentifier: text("oidc_identifier"),
   ssoProviderId: integer("sso_provider_id"),
   clientId: text("client_id"),

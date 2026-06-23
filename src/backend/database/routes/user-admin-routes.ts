@@ -502,7 +502,7 @@ export function registerUserAdminRoutes(
 
       await db
         .update(users)
-        .set({ username: newUsername })
+        .set({ username: newUsername, usernameOverridden: true })
         .where(eq(users.id, resolvedUserId));
 
       try {

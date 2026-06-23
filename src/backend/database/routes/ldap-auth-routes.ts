@@ -407,7 +407,12 @@ export function registerLDAPAuthRoutes(router: Router): void {
         const isDualAuth =
           existingUsers[0].passwordHash &&
           existingUsers[0].passwordHash.trim() !== "";
-        if (!isDualAuth && existingUsers[0].username !== displayName) {
+        // VRIT: don't clobber a username an admin has manually overridden.
+        if (
+          !isDualAuth &&
+          !existingUsers[0].usernameOverridden &&
+          existingUsers[0].username !== displayName
+        ) {
           await db
             .update(users)
             .set({ username: displayName })

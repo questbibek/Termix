@@ -697,10 +697,16 @@ const migrateSchema = () => {
   addColumnIfNotExists("user_preferences", "confirm_tab_close", "INTEGER");
   addColumnIfNotExists("user_preferences", "hidden_rail_tabs", "TEXT");
   addColumnIfNotExists("user_preferences", "compact_host_view", "INTEGER");
+  addColumnIfNotExists("user_preferences", "status_color_scheme", "TEXT");
 
   addColumnIfNotExists("users", "is_admin", "INTEGER NOT NULL DEFAULT 0");
 
   addColumnIfNotExists("users", "is_oidc", "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfNotExists(
+    "users",
+    "username_overridden",
+    "INTEGER NOT NULL DEFAULT 0",
+  );
   addColumnIfNotExists("users", "oidc_identifier", "TEXT");
   addColumnIfNotExists("users", "client_id", "TEXT");
   addColumnIfNotExists("users", "client_secret", "TEXT");
