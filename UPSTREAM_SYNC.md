@@ -176,6 +176,31 @@ them uniform so the grep gate stays the single source of truth).
 
 ---
 
+## 🧾 Fork change ledger
+
+Reverse-chronological record of every fork commit on `vrit`, so a future sync
+can tell at a glance what is ours, why it exists, and whether a conflict means
+"drop ours" (upstream now does it) or "keep ours" (unique to the fork). **All
+entries below are KEEP unless noted.** Append new fork commits to the top.
+
+| Commit | Purpose | Files | On conflict |
+|--------|---------|-------|-------------|
+| `fadae77` | Document + mark all fork additions so syncs don't revert them | `UPSTREAM_SYNC.md`, `MERGE_CHECKLIST.md`, `VRIT:` markers in the files below | Keep — this ledger lives here |
+| `a1ff7cd` | KEY/PWD badge in the credential picker (tell key vs password apart) | `CredentialPicker.tsx`, `HostEditor.tsx` | Keep |
+| `cd190ac` | Searchable folder picker in the Create/Edit Snippet dialog (replaces native `<select>`); inline "create folder" persists a real folder so the snippet isn't orphaned | `SnippetsPanel.tsx` (`SnippetFolderPicker`), `en.json` | Keep — but if upstream adds its **own** snippet folder picker, take theirs and drop ours |
+| `2c0d290` | Move ALL workflows off Blacksmith → GitHub-hosted runners (Blacksmith jobs queue forever on the fork) | `.github/workflows/*` (6 files) | Keep — never accept `blacksmith-*` / `useblacksmith/*` (see Runners section) |
+| `ccba056` | Type fix: `parseInt(id)` in the host-duplicate error log (broke backend tsc) | `host.ts` | Keep (folded into the duplicate feature) |
+| `d83c47d` | **Searchable credential picker** + **secret-preserving server-side duplicate** for hosts & credentials. Replaced the old client-side host clone (which reset key-auth→password because key material never reaches the UI) with a backend `/duplicate` endpoint that clones decrypted secrets server-side | `host.ts`, `credentials.ts`, `ssh-host-management-api.ts`, `credentials-api.ts`, `main-axios.ts`, `CredentialPicker.tsx`, `HostEditor.tsx`, `HostManager.tsx`, `HostCredentialList.tsx`, `SidebarTree.tsx` | Keep — but if upstream ships its own duplicate/clone, prefer theirs server-side and reconcile the UI |
+| `6eee405` | R2 backup: enforce a real schedule across restarts (skip if a backup younger than the interval exists) + strict count-based retention (keep newest N, never drop below) | `r2-backup.ts`, `docker/backup.env.example` | Keep (file is 100% ours) |
+| `e015848` | Add `MERGE_CHECKLIST.md` (merge validation gates) | `MERGE_CHECKLIST.md`, `UPSTREAM_SYNC.md` | Keep |
+
+> Older fork commits (branding, R2 backup module, email allowlist/OTP, terminal
+> padding) predate this ledger and are covered by the tables in the sections
+> above. When in doubt about an unlabeled change, `git log -p -S '<token>'` to
+> find which fork commit introduced it.
+
+---
+
 ## Post-sync checklist
 
 1. `./scripts/check-branding.sh` → "Branding intact."
