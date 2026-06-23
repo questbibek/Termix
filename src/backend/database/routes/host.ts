@@ -571,7 +571,7 @@ router.post(
       sshLogger.error("Failed to duplicate SSH host", err, {
         operation: "host_duplicate",
         userId,
-        hostId: id,
+        hostId: parseInt(id),
       });
       res.status(500).json({ error: "Failed to duplicate host" });
     }
