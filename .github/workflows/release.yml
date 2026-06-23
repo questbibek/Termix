@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   prep:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.info.outputs.version }}
       release_tag: ${{ steps.info.outputs.release_tag }}
@@ -82,7 +82,7 @@ jobs:
   normalize:
     needs: [prep]
     if: ${{ inputs.mode != 'Overwrite release' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout dev branch
         uses: actions/checkout@v6
@@ -134,7 +134,7 @@ jobs:
   crowdin:
     needs: [prep, normalize]
     if: ${{ inputs.mode != 'Dry run' && inputs.mode != 'Overwrite release' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout dev branch
         uses: actions/checkout@v6
@@ -214,7 +214,7 @@ jobs:
   merge-to-main:
     needs: [prep, normalize, crowdin]
     if: ${{ always() && needs.prep.result == 'success' && (needs.normalize.result == 'success' || needs.normalize.result == 'skipped') && (needs.crowdin.result == 'success' || needs.crowdin.result == 'skipped') }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     outputs:
       main_sha: ${{ steps.merge.outputs.main_sha }}
       build_ref: ${{ steps.merge.outputs.build_ref }}
@@ -292,7 +292,7 @@ jobs:
   create-release:
     needs: [prep, merge-to-main, docker]
     if: ${{ inputs.mode != 'Dry run' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -365,7 +365,7 @@ jobs:
   cask-commit-back:
     needs: [prep, electron-release]
     if: ${{ inputs.mode != 'Dry run' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -406,7 +406,7 @@ jobs:
   docs:
     needs: [prep, merge-to-main]
     if: ${{ always() && needs.merge-to-main.result == 'success' && inputs.mode != 'Overwrite release' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Termix
         uses: actions/checkout@v6
@@ -495,7 +495,7 @@ jobs:
   publish-youtube:
     needs: [prep, electron-release]
     if: ${{ always() && inputs.mode != 'Dry run' && inputs.mode != 'Overwrite release' && needs.electron-release.result == 'success' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout main
         uses: actions/checkout@v6
@@ -526,7 +526,7 @@ jobs:
         publish-youtube,
       ]
     if: ${{ always() && (inputs.mode == 'Everything' || inputs.mode == 'Skip submit') && needs.merge-to-main.result == 'success' && needs.electron-release.result == 'success' && needs.cask-commit-back.result == 'success' && needs.docs.result == 'success' && needs.publish-youtube.result == 'success' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - name: Delete dev branch in Termix
         env:
