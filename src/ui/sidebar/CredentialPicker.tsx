@@ -8,6 +8,30 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
  * pattern as FolderPathPicker, so a long credential list can be filtered by
  * name or username instead of scrolling a native <select>.
  */
+type CredentialOption = {
+  id: string;
+  name: string;
+  username: string;
+  type?: "key" | "password";
+};
+
+// KEY / PWD badge — same look as the credentials list, so the auth type is
+// unambiguous when two credentials share a similar name.
+function TypeBadge({ type }: { type?: "key" | "password" }) {
+  const isKey = type === "key";
+  return (
+    <span
+      className={`text-[9px] px-1 py-px font-bold border leading-none shrink-0 ${
+        isKey
+          ? "border-accent-brand/30 text-accent-brand"
+          : "border-border/60 text-muted-foreground/60"
+      }`}
+    >
+      {isKey ? "KEY" : "PWD"}
+    </span>
+  );
+}
+
 export function CredentialPicker({
   value,
   onChange,
@@ -15,7 +39,7 @@ export function CredentialPicker({
 }: {
   value: string;
   onChange: (id: string) => void;
-  credentials: { id: string; name: string; username: string }[];
+  credentials: CredentialOption[];
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -56,6 +80,7 @@ export function CredentialPicker({
                   </span>
                 ) : null}
               </span>
+              <TypeBadge type={selected.type} />
             </span>
           ) : (
             <span className="flex-1 text-left text-muted-foreground">
@@ -113,12 +138,13 @@ export function CredentialPicker({
               }`}
             >
               <KeyRound className="size-3.5 shrink-0 text-muted-foreground/60" />
-              <span className="truncate">
+              <span className="truncate flex-1">
                 {c.name}
                 {c.username ? (
                   <span className="text-muted-foreground/60"> ({c.username})</span>
                 ) : null}
               </span>
+              <TypeBadge type={c.type} />
             </button>
           ))}
           {filtered.length === 0 && (

@@ -82,7 +82,12 @@ export function HostEditor({
   onProtocolChange: (p: Partial<typeof protocols>) => void;
   onTabChange: (tab: string) => void;
   hosts: Host[];
-  credentials: { id: string; name: string; username: string }[];
+  credentials: {
+    id: string;
+    name: string;
+    username: string;
+    type?: "key" | "password";
+  }[];
 }) {
   const { t } = useTranslation();
   const { setPreviewTerminalTheme } = useTabsSafe();
