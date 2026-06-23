@@ -1949,6 +1949,7 @@ export {
   deleteApiKey,
   makeUserAdmin,
   removeAdminStatus,
+  changeUsername,
   deleteUser,
   deleteAccount,
   updateRegistrationAllowed,

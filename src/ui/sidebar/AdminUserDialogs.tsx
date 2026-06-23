@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { AlertCircle, Eye, EyeOff, Trash2 } from "lucide-react";
+import { AlertCircle, Check, Eye, EyeOff, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AdminToggle } from "./AdminSettingsShared";
 import type { AdminUser } from "./AdminManagementSections";
@@ -153,6 +153,7 @@ type EditUserDialogProps = {
   roles: Role[];
   setEditUserRoles: Dispatch<SetStateAction<UserRole[]>>;
   handleToggleAdmin: (user: AdminUser) => void;
+  handleChangeUsername: (userId: string, newUsername: string) => Promise<void>;
   handleRevokeUserSessions: (userId: string) => void;
   handleDeleteEditUser: () => void;
 };
@@ -167,10 +168,30 @@ export function AdminEditUserDialog({
   roles,
   setEditUserRoles,
   handleToggleAdmin,
+  handleChangeUsername,
   handleRevokeUserSessions,
   handleDeleteEditUser,
 }: EditUserDialogProps) {
   const { t } = useTranslation();
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameInput, setUsernameInput] = useState("");
+
+  useEffect(() => {
+    setEditingUsername(false);
+    setUsernameInput(editUserTarget?.username ?? "");
+  }, [editUserTarget, open]);
+
+  const submitUsername = async () => {
+    if (!editUserTarget) return;
+    const trimmed = usernameInput.trim();
+    if (!trimmed || trimmed === editUserTarget.username) {
+      setEditingUsername(false);
+      setUsernameInput(editUserTarget.username);
+      return;
+    }
+    await handleChangeUsername(editUserTarget.id, trimmed);
+    setEditingUsername(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,9 +211,62 @@ export function AdminEditUserDialog({
                 <span className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">
                   {t("admin.editUserUsername")}
                 </span>
-                <span className="text-sm font-semibold">
-                  {editUserTarget.username}
-                </span>
+                {editingUsername ? (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <Input
+                      autoFocus
+                      value={usernameInput}
+                      onChange={(e) => setUsernameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void submitUsername();
+                        if (e.key === "Escape") {
+                          setEditingUsername(false);
+                          setUsernameInput(editUserTarget.username);
+                        }
+                      }}
+                      disabled={editUserLoading}
+                      className="h-7 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void submitUsername()}
+                      disabled={editUserLoading}
+                      title={t("common.save")}
+                      className="text-accent-brand hover:text-accent-brand/80 shrink-0 disabled:opacity-50"
+                    >
+                      <Check className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingUsername(false);
+                        setUsernameInput(editUserTarget.username);
+                      }}
+                      disabled={editUserLoading}
+                      title={t("common.cancel")}
+                      className="text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-50"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-semibold">
+                      {editUserTarget.username}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUsernameInput(editUserTarget.username);
+                        setEditingUsername(true);
+                      }}
+                      title={t("admin.changeUsername")}
+                      className="text-muted-foreground hover:text-accent-brand shrink-0"
+                    >
+                      <Pencil className="size-3" />
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">

@@ -436,7 +436,9 @@ export function UserProfilePanel({
     hiddenRailTabs?: string | null;
     statusColorScheme?: string | null;
   };
-  onPrefsChange?: (prefs: { reopenTabsOnLogin: boolean }) => void;
+  onPrefsChange?: (
+    prefs: Partial<{ reopenTabsOnLogin: boolean; storageMode: string }>,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const themeLabel: Record<ThemeId, string> = {
@@ -597,12 +599,25 @@ export function UserProfilePanel({
       .catch(() => {});
   }, [t]);
 
+  // Keep the storage-mode toggle in sync with the persisted preference. The
+  // useState initializer above runs once; if the panel mounted before prefs
+  // finished loading it would otherwise stay stuck on "local" (browser) and
+  // silently save appearance changes to the browser instead of the database.
+  useEffect(() => {
+    if (userPrefs?.storageMode) {
+      setStorageMode(userPrefs.storageMode === "cloud" ? "cloud" : "local");
+    }
+  }, [userPrefs?.storageMode]);
+
   function saveToCloud(prefs: Parameters<typeof saveUserPreferences>[0]) {
     void saveUserPreferences(prefs).catch(() => {});
   }
 
   async function handleStorageModeChange(mode: "local" | "cloud") {
     setStorageMode(mode);
+    // Keep the parent's copy in sync so navigating away and back doesn't
+    // re-read a stale value and silently revert the toggle.
+    onPrefsChange?.({ storageMode: mode });
     if (mode === "cloud") {
       // Snapshot current browser localStorage values so any tab can restore them later
       const SNAPSHOT_KEYS = [

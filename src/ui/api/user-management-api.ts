@@ -135,6 +135,21 @@ export async function removeAdminStatus(
   }
 }
 
+export async function changeUsername(
+  userId: string,
+  username: string,
+): Promise<{ message: string; username: string }> {
+  try {
+    const response = await authApi.post("/users/change-username", {
+      userId,
+      username,
+    });
+    return response.data;
+  } catch (error) {
+    handleApiError(error, "change username");
+  }
+}
+
 export async function deleteUser(
   username: string,
 ): Promise<Record<string, unknown>> {

@@ -421,6 +421,134 @@ export function registerUserAdminRoutes(
 
   /**
    * @openapi
+   * /users/change-username:
+   *   post:
+   *     summary: Change a user's username
+   *     description: Allows an admin to rename any user account.
+   *     tags:
+   *       - Users
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               userId:
+   *                 type: string
+   *               username:
+   *                 type: string
+   *                 description: The new username.
+   *     responses:
+   *       200:
+   *         description: Username updated.
+   *       400:
+   *         description: User ID and a new username are required.
+   *       403:
+   *         description: Not authorized.
+   *       404:
+   *         description: User not found.
+   *       409:
+   *         description: Username already exists.
+   *       500:
+   *         description: Failed to change username.
+   */
+  router.post("/change-username", authenticateJWT, async (req, res) => {
+    const adminId = (req as AuthenticatedRequest).userId;
+    const { userId: targetUserId, username } = req.body;
+
+    const resolvedUserId = isNonEmptyString(targetUserId)
+      ? targetUserId.trim()
+      : null;
+    const newUsername = isNonEmptyString(username) ? username.trim() : null;
+
+    if (!resolvedUserId || !newUsername) {
+      return res
+        .status(400)
+        .json({ error: "User ID and a new username are required" });
+    }
+
+    try {
+      const adminUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, adminId));
+      if (!adminUser || adminUser.length === 0 || !adminUser[0].isAdmin) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const targetUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, resolvedUserId))
+        .limit(1);
+      if (!targetUser || targetUser.length === 0) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const oldUsername = targetUser[0].username;
+      if (oldUsername === newUsername) {
+        return res.json({ message: "Username unchanged", username: newUsername });
+      }
+
+      const existing = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.username, newUsername))
+        .limit(1);
+      if (existing.length > 0 && existing[0].id !== resolvedUserId) {
+        return res.status(409).json({ error: "Username already exists" });
+      }
+
+      await db
+        .update(users)
+        .set({ username: newUsername })
+        .where(eq(users.id, resolvedUserId));
+
+      try {
+        const { saveMemoryDatabaseToFile } = await import("../db/index.js");
+        await saveMemoryDatabaseToFile();
+      } catch (saveError) {
+        authLogger.error("Failed to persist username change to disk", saveError, {
+          operation: "change_username_save_failed",
+          userId: resolvedUserId,
+        });
+      }
+
+      authLogger.info("Username changed by admin", {
+        operation: "change_username",
+        adminId,
+        targetUserId: resolvedUserId,
+        oldUsername,
+        newUsername,
+      });
+
+      const { ipAddress, userAgent } = getRequestMeta(req);
+      await logAudit({
+        userId: adminId,
+        username: adminUser[0].username,
+        action: "change_username",
+        resourceType: "user",
+        resourceId: resolvedUserId,
+        resourceName: newUsername,
+        details: JSON.stringify({ oldUsername, newUsername }),
+        ipAddress,
+        userAgent,
+        success: true,
+      });
+
+      res.json({
+        message: `Username changed to ${newUsername}`,
+        username: newUsername,
+      });
+    } catch (err) {
+      authLogger.error("Failed to change username", err);
+      res.status(500).json({ error: "Failed to change username" });
+    }
+  });
+
+  /**
+   * @openapi
    * /users/admin-create:
    *   post:
    *     summary: Admin create user

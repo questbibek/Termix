@@ -12,6 +12,7 @@ import {
   adminCreateUser,
   makeUserAdmin,
   removeAdminStatus,
+  changeUsername,
   getRegistrationAllowed,
   updateRegistrationAllowed,
   getPasswordLoginAllowed,
@@ -613,6 +614,29 @@ export function AdminSettingsPanel() {
     }
   }
 
+  async function handleChangeUsername(userId: string, newUsername: string) {
+    const trimmed = newUsername.trim();
+    if (!trimmed) {
+      toast.error(t("admin.changeUsernameRequired"));
+      return;
+    }
+    setEditUserLoading(true);
+    try {
+      await changeUsername(userId, trimmed);
+      setEditUserTarget((prev) =>
+        prev && prev.id === userId ? { ...prev, username: trimmed } : prev,
+      );
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, username: trimmed } : u)),
+      );
+      toast.success(t("admin.changeUsernameSuccess", { username: trimmed }));
+    } catch (e: unknown) {
+      toast.error(apiErrorMessage(e, t("admin.changeUsernameFailed")));
+    } finally {
+      setEditUserLoading(false);
+    }
+  }
+
   async function handleRevokeUserSessions(userId: string) {
     try {
       await revokeAllUserSessions(userId);
@@ -980,6 +1004,7 @@ export function AdminSettingsPanel() {
         roles={roles}
         setEditUserRoles={setEditUserRoles}
         handleToggleAdmin={handleToggleAdmin}
+        handleChangeUsername={handleChangeUsername}
         handleRevokeUserSessions={handleRevokeUserSessions}
         handleDeleteEditUser={handleDeleteEditUser}
       />
