@@ -458,6 +458,128 @@ router.post(
 
 /**
  * @openapi
+ * /ssh/db/host/{id}/duplicate:
+ *   post:
+ *     summary: Duplicate an existing SSH host
+ *     description: >
+ *       Server-side clone of a host, including encrypted secrets (password and
+ *       key material). Unlike a client-side copy, the secrets are preserved
+ *       because they never have to leave the server. The clone gets a "(copy)"
+ *       name suffix; everything else is identical and immediately editable.
+ *     tags:
+ *       - SSH
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: The newly created host clone.
+ *       404:
+ *         description: Source host not found.
+ *       500:
+ *         description: Failed to duplicate host.
+ */
+router.post(
+  "/db/host/:id/duplicate",
+  authenticateJWT,
+  requireDataAccess,
+  async (req: Request, res: Response) => {
+    const userId = (req as AuthenticatedRequest).userId;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!isNonEmptyString(userId) || !id) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    try {
+      // Read the full row with secrets DECRYPTED so the clone keeps password +
+      // key material. (A client-side clone can't: secrets never reach the UI.)
+      const rows = await SimpleDBOps.select(
+        db
+          .select()
+          .from(hosts)
+          .where(and(eq(hosts.id, parseInt(id)), eq(hosts.userId, userId))),
+        "ssh_data",
+        userId,
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Host not found" });
+      }
+
+      // Drop the identity/timestamp columns so a fresh row is generated; copy
+      // everything else (incl. secrets, configs, folder, tags) verbatim.
+      const {
+        id: _id,
+        createdAt: _createdAt,
+        updatedAt: _updatedAt,
+        ...rest
+      } = rows[0] as Record<string, unknown>;
+
+      const sshDataObj: Record<string, unknown> = {
+        ...rest,
+        name: `${(rows[0].name as string) || (rows[0].ip as string)} (copy)`,
+      };
+
+      const result = await SimpleDBOps.insert(
+        hosts,
+        "ssh_data",
+        sshDataObj,
+        userId,
+      );
+
+      if (!result) {
+        return res.status(500).json({ error: "Failed to duplicate host" });
+      }
+
+      const baseHost = transformHostResponse(result);
+      const resolvedHost =
+        (await resolveHostCredentials(baseHost, userId)) || baseHost;
+
+      databaseLogger.success("SSH host duplicated", {
+        operation: "host_duplicate_success",
+        userId,
+        sourceHostId: parseInt(id),
+        hostId: result.id as number,
+      });
+
+      const { ipAddress: dhIp, userAgent: dhUa } = getRequestMeta(req);
+      const { users: usersTableDh } = await import("../db/schema.js");
+      const dhActor = await db
+        .select({ username: usersTableDh.username })
+        .from(usersTableDh)
+        .where(eq(usersTableDh.id, userId))
+        .limit(1);
+      await logAudit({
+        userId,
+        username: dhActor[0]?.username ?? userId,
+        action: "create_host",
+        resourceType: "host",
+        resourceId: String(result.id),
+        resourceName: String(sshDataObj.name),
+        ipAddress: dhIp,
+        userAgent: dhUa,
+        success: true,
+      });
+
+      res.json(resolvedHost);
+      notifyStatsHostUpdated(result.id as number, req.headers, "host_create");
+    } catch (err) {
+      sshLogger.error("Failed to duplicate SSH host", err, {
+        operation: "host_duplicate",
+        userId,
+        hostId: id,
+      });
+      res.status(500).json({ error: "Failed to duplicate host" });
+    }
+  },
+);
+
+/**
+ * @openapi
  * /host/quick-connect:
  *   post:
  *     summary: Create a temporary SSH connection without saving to database

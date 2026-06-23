@@ -14,6 +14,7 @@ import {
   getSSHHosts,
   getCredentials,
   deleteCredential,
+  duplicateCredential,
   deployCredentialToHost,
   renameCredentialFolder,
 } from "@/main-axios";
@@ -296,6 +297,16 @@ export function HostManager({
     setCredentials((prev) => prev.filter((c) => c.id !== cred.id));
   };
 
+  const handleDuplicateCredential = async (cred: Credential) => {
+    try {
+      await duplicateCredential(Number(cred.id));
+      window.dispatchEvent(new CustomEvent("termix:credentials-changed"));
+      toast.success(t("hosts.duplicatedCredential", { name: cred.name }));
+    } catch {
+      toast.error(t("hosts.failedToDuplicateCredential"));
+    }
+  };
+
   // Editor view: full-width with top tab bar instead of side nav
   const renderEditorView = () => {
     const isHost = !!editingHost;
@@ -510,6 +521,7 @@ export function HostManager({
               setEditingCredential(cred);
               setActiveCredentialTab("general");
             }}
+            onDuplicateCredential={handleDuplicateCredential}
             onDeleteCredential={handleDeleteCredential}
             onAddCredential={() => {
               setEditingCredential("new");

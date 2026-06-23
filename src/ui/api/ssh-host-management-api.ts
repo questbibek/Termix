@@ -159,6 +159,15 @@ export async function bulkUpdateSSHHosts(
   }
 }
 
+export async function duplicateSSHHost(hostId: number): Promise<SSHHost> {
+  try {
+    const response = await sshHostApi.post(`/db/host/${hostId}/duplicate`);
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error, "duplicate SSH host");
+  }
+}
+
 export async function deleteSSHHost(
   hostId: number,
 ): Promise<Record<string, unknown>> {

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronRight,
   Copy,
+  CopyPlus,
   FolderOpen,
   KeyRound,
   Loader2,
@@ -31,6 +32,7 @@ function CredentialItem({
   stripeIndex,
   onDeploy,
   onEdit,
+  onDuplicate,
   onDelete,
 }: {
   cred: Credential;
@@ -38,6 +40,7 @@ function CredentialItem({
   stripeIndex: number;
   onDeploy: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const isKey = cred.type === "key";
@@ -133,6 +136,13 @@ function CredentialItem({
               <Pencil className="size-3.5" />
             </button>
             <button
+              title="Duplicate credential"
+              onClick={onDuplicate}
+              className="flex items-center justify-center size-7 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted-foreground/10 transition-colors"
+            >
+              <CopyPlus className="size-3.5" />
+            </button>
+            <button
               title="Delete credential"
               onClick={onDelete}
               className="flex items-center justify-center size-7 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
@@ -158,6 +168,7 @@ function CredentialFolderItem({
   onRenameFolder,
   onDeploy,
   onEdit,
+  onDuplicate,
   onDelete,
 }: {
   folder: string;
@@ -171,6 +182,7 @@ function CredentialFolderItem({
   onRenameFolder: (folder: string, newName: string) => Promise<void>;
   onDeploy: (cred: Credential) => void;
   onEdit: (cred: Credential) => void;
+  onDuplicate: (cred: Credential) => void;
   onDelete: (cred: Credential) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -254,6 +266,7 @@ function CredentialFolderItem({
                 stripeIndex={stripeOffset + 1 + i}
                 onDeploy={() => onDeploy(cred)}
                 onEdit={() => onEdit(cred)}
+                onDuplicate={() => onDuplicate(cred)}
                 onDelete={() => onDelete(cred)}
               />
             );
@@ -276,6 +289,7 @@ export function HostCredentialList({
   onRenameFolder,
   onDeployCredential,
   onEditCredential,
+  onDuplicateCredential,
   onDeleteCredential,
   onAddCredential,
   onConfirmDialogChange,
@@ -291,6 +305,7 @@ export function HostCredentialList({
   onRenameFolder: (folder: string, newName: string) => Promise<void>;
   onDeployCredential: (cred: Credential) => void;
   onEditCredential: (cred: Credential) => void;
+  onDuplicateCredential: (cred: Credential) => void;
   onDeleteCredential: (cred: Credential) => Promise<void>;
   onAddCredential: () => void;
   onConfirmDialogChange: (dialog: ConfirmDialog) => void;
@@ -369,6 +384,7 @@ export function HostCredentialList({
               onRenameFolder={onRenameFolder}
               onDeploy={onDeployCredential}
               onEdit={handleEdit}
+              onDuplicate={onDuplicateCredential}
               onDelete={handleDelete}
             />
           );

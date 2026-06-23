@@ -55,6 +55,7 @@ import {
   HostFilesTab,
 } from "./HostEditorFeatureTabs";
 import { HostEditorGeneralTab } from "./HostEditorGeneralTab";
+import { CredentialPicker } from "./CredentialPicker";
 import {
   HostEditorRdpTab,
   HostEditorTelnetTab,
@@ -447,10 +448,10 @@ export function HostEditor({
                         <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                           {t("hosts.storedCredential")}
                         </label>
-                        <select
+                        <CredentialPicker
                           value={form.credentialId}
-                          onChange={(e) => {
-                            const newId = e.target.value;
+                          credentials={credentials}
+                          onChange={(newId) => {
                             setField("credentialId", newId);
                             if (!form.overrideCredentialUsername) {
                               const cred = credentials.find(
@@ -460,19 +461,7 @@ export function HostEditor({
                                 setField("username", cred.username);
                             }
                           }}
-                          className="flex h-9 w-full border border-border bg-background px-3 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                        >
-                          <option value="">
-                            {t("hosts.selectACredential")}
-                          </option>
-                          {credentials.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.username
-                                ? `${c.name} (${c.username})`
-                                : c.name}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                       {selectedCredential?.username && (
                         <div className="flex items-center justify-between col-span-2 pt-1">

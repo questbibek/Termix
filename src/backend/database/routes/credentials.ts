@@ -1062,6 +1062,129 @@ router.put(
   },
 );
 
+/**
+ * @openapi
+ * /credentials/{id}/duplicate:
+ *   post:
+ *     summary: Duplicate a credential
+ *     description: >
+ *       Server-side clone of a credential, including the encrypted secret
+ *       (password or private key + passphrase). The clone gets a "(copy)" name
+ *       suffix and its usage stats reset; everything else is identical.
+ *     tags:
+ *       - Credentials
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       201:
+ *         description: The newly created credential clone.
+ *       404:
+ *         description: Source credential not found.
+ *       500:
+ *         description: Failed to duplicate credential.
+ */
+router.post(
+  "/:id/duplicate",
+  authenticateJWT,
+  requireDataAccess,
+  async (req: Request, res: Response) => {
+    const userId = (req as AuthenticatedRequest).userId;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!isNonEmptyString(userId) || !id) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    try {
+      // Read the full row with secrets DECRYPTED so the clone keeps its
+      // password / key material — SimpleDBOps.insert re-encrypts on the way in.
+      const rows = await SimpleDBOps.select(
+        db
+          .select()
+          .from(sshCredentials)
+          .where(
+            and(
+              eq(sshCredentials.id, parseInt(id)),
+              eq(sshCredentials.userId, userId),
+            ),
+          ),
+        "ssh_credentials",
+        userId,
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Credential not found" });
+      }
+
+      const src = rows[0] as Record<string, unknown>;
+      const credentialData = {
+        userId,
+        name: `${src.name} (copy)`,
+        description: (src.description as string) || null,
+        folder: (src.folder as string) || null,
+        tags: (src.tags as string) || "",
+        authType: src.authType as string,
+        username: (src.username as string) || null,
+        password: (src.password as string) || null,
+        key: (src.key as string) || null,
+        privateKey: (src.privateKey as string) || null,
+        publicKey: (src.publicKey as string) || null,
+        keyPassword: (src.keyPassword as string) || null,
+        keyType: (src.keyType as string) || null,
+        detectedKeyType: (src.detectedKeyType as string) || null,
+        certPublicKey: (src.certPublicKey as string) || null,
+        usageCount: 0,
+        lastUsed: null,
+      };
+
+      const created = (await SimpleDBOps.insert(
+        sshCredentials,
+        "ssh_credentials",
+        credentialData,
+        userId,
+      )) as typeof credentialData & { id: number };
+
+      const { ipAddress: cpIp, userAgent: cpUa } = getRequestMeta(req);
+      const { users: usersTableCp } = await import("../db/schema.js");
+      const cpActor = await db
+        .select({ username: usersTableCp.username })
+        .from(usersTableCp)
+        .where(eq(usersTableCp.id, userId))
+        .limit(1);
+      await logAudit({
+        userId,
+        username: cpActor[0]?.username ?? userId,
+        action: "create_credential",
+        resourceType: "credential",
+        resourceId: String(created.id),
+        resourceName: credentialData.name,
+        ipAddress: cpIp,
+        userAgent: cpUa,
+        success: true,
+      });
+
+      authLogger.success("SSH credential duplicated", {
+        operation: "credential_duplicate_success",
+        userId,
+        sourceCredentialId: parseInt(id),
+        credentialId: created.id,
+      });
+
+      res.status(201).json(formatCredentialOutput(created));
+    } catch (err) {
+      authLogger.error("Failed to duplicate credential", err);
+      res.status(500).json({
+        error:
+          err instanceof Error ? err.message : "Failed to duplicate credential",
+      });
+    }
+  },
+);
+
 registerCredentialKeyRoutes(router, authenticateJWT);
 
 registerCredentialDeployRoutes(router, authenticateJWT);

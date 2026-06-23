@@ -50,6 +50,19 @@ export async function updateCredential(
   }
 }
 
+export async function duplicateCredential(
+  credentialId: number,
+): Promise<Record<string, unknown>> {
+  try {
+    const response = await authApi.post(
+      `/credentials/${credentialId}/duplicate`,
+    );
+    return response.data;
+  } catch (error) {
+    throw handleApiError(error, "duplicate credential");
+  }
+}
+
 export async function deleteCredential(
   credentialId: number,
 ): Promise<Record<string, unknown>> {
