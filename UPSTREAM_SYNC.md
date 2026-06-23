@@ -124,6 +124,7 @@ file — then re-add the marked/greppable block. Every code block carries a
 | **Duplicate credential** (server-side, keeps secrets) | `src/backend/database/routes/credentials.ts`, `src/ui/api/credentials-api.ts`, `src/ui/main-axios.ts`, `src/ui/sidebar/HostManager.tsx`, `src/ui/sidebar/HostCredentialList.tsx` | `duplicate` / `duplicateCredential` |
 | **Searchable credential picker** (KEY/PWD badge) in host editor | `src/ui/sidebar/CredentialPicker.tsx` (ours), `src/ui/sidebar/HostEditor.tsx` (wires it in) | `CredentialPicker` |
 | **Searchable snippet folder picker** | `src/ui/sidebar/SnippetsPanel.tsx` | `SnippetFolderPicker` |
+| **Credential multi-select** (bulk delete + move-to-folder, which doubles as folder creation) + folder expand/collapse-all | `src/ui/sidebar/CredentialsPanel.tsx` (⋯ menu), `src/ui/sidebar/HostManager.tsx` (`CredentialSelectionBar`, bulk handlers, `credentials:*` events), `src/ui/sidebar/HostCredentialList.tsx` (checkboxes, controlled folder open) | `credSelectionMode` / `CredentialSelectionBar` / `credentials:toggle-select` |
 | i18n keys for the above | `src/ui/locales/en.json` | `credentialPicker*`, `folderPickerSearch` (snippets block). JSON — no comment marker; additive, other locales fall back to en |
 
 If any of these features vanish after a merge (upstream rewrote the file and the
@@ -185,6 +186,7 @@ entries below are KEEP unless noted.** Append new fork commits to the top.
 
 | Commit | Purpose | Files | On conflict |
 |--------|---------|-------|-------------|
+| _next_ | Credential multi-select (bulk delete + move-to-folder = folder creation) + folder expand/collapse-all, for parity with the host list | `CredentialsPanel.tsx`, `HostManager.tsx`, `HostCredentialList.tsx`, `en.json` | Keep — but if upstream adds its own credential selection/bulk UI, prefer theirs and drop ours |
 | `fadae77` | Document + mark all fork additions so syncs don't revert them | `UPSTREAM_SYNC.md`, `MERGE_CHECKLIST.md`, `VRIT:` markers in the files below | Keep — this ledger lives here |
 | `a1ff7cd` | KEY/PWD badge in the credential picker (tell key vs password apart) | `CredentialPicker.tsx`, `HostEditor.tsx` | Keep |
 | `cd190ac` | Searchable folder picker in the Create/Edit Snippet dialog (replaces native `<select>`); inline "create folder" persists a real folder so the snippet isn't orphaned | `SnippetsPanel.tsx` (`SnippetFolderPicker`), `en.json` | Keep — but if upstream adds its **own** snippet folder picker, take theirs and drop ours |

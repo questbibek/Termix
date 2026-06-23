@@ -8,7 +8,20 @@ import React, {
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/button";
-import { ArrowLeft, Search, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronsUpDown,
+  FolderPlus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/popover";
 import { toast } from "sonner";
 import {
   getSSHHosts,
@@ -17,6 +30,7 @@ import {
   duplicateCredential,
   deployCredentialToHost,
   renameCredentialFolder,
+  updateCredential,
 } from "@/main-axios";
 
 import type { Host, Credential } from "@/types/ui-types";
@@ -73,6 +87,142 @@ function credentialPassesFilters(
   return true;
 }
 
+// VRIT: contextual action bar shown above the credential list while in
+// multi-select mode. "Move to folder" doubles as folder creation — typing a
+// new name and confirming assigns it (credential folders are derived from the
+// folder field, so assignment is creation).
+function CredentialSelectionBar({
+  count,
+  folders,
+  onMove,
+  onDelete,
+  onCancel,
+}: {
+  count: number;
+  folders: string[];
+  onMove: (folder: string | null) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const realFolders = folders
+    .filter((f) => f && f !== "Uncategorized")
+    .sort((a, b) => a.localeCompare(b));
+  const query = search.trim();
+  const queryLower = query.toLowerCase();
+  const filtered = query
+    ? realFolders.filter((f) => f.toLowerCase().includes(queryLower))
+    : realFolders;
+  const canCreate =
+    query.length > 0 &&
+    !realFolders.some((f) => f.toLowerCase() === queryLower);
+
+  function move(folder: string | null) {
+    setMoveOpen(false);
+    setSearch("");
+    onMove(folder);
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 shrink-0 border-b border-border/60 bg-accent-brand/5">
+      <span className="text-xs font-semibold text-accent-brand">
+        {t("credentials.nSelected", { count })}
+      </span>
+      <div className="flex items-center gap-1 ml-auto">
+        <Popover open={moveOpen} onOpenChange={setMoveOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={count === 0}
+              className="flex items-center gap-1 h-7 px-2 text-[10px] font-medium text-foreground hover:bg-muted/60 border border-border rounded-sm transition-colors disabled:opacity-40"
+            >
+              <FolderPlus className="size-3 shrink-0" />
+              {t("credentials.moveToFolder")}
+              <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground/50" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            sideOffset={4}
+            className="w-56 max-h-(--radix-popover-content-available-height) p-0 rounded-none border-0 ring-1 ring-border shadow-md flex flex-col overflow-hidden"
+          >
+            <div className="flex items-center gap-2 border-b border-border px-2.5 h-8 shrink-0">
+              <Search className="size-3 shrink-0 text-muted-foreground/60" />
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (canCreate) move(query);
+                    else if (filtered.length > 0) move(filtered[0]);
+                  }
+                }}
+                placeholder={t("credentials.folderPickerSearch")}
+                className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground/50 text-foreground min-w-0"
+              />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto py-1">
+              <button
+                type="button"
+                onClick={() => move(null)}
+                className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+              >
+                <X className="size-3.5 shrink-0" />
+                {t("credentials.moveToNoFolder")}
+              </button>
+              {canCreate && (
+                <button
+                  type="button"
+                  onClick={() => move(query)}
+                  className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-accent-brand hover:bg-accent transition-colors"
+                >
+                  <FolderPlus className="size-3.5 shrink-0" />
+                  <span className="truncate">
+                    {t("credentials.folderPickerCreate", { name: query })}
+                  </span>
+                </button>
+              )}
+              {filtered.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => move(f)}
+                  className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-foreground/80 hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  <Check className="size-3.5 shrink-0 opacity-0" />
+                  <span className="truncate">{f}</span>
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        <button
+          type="button"
+          disabled={count === 0}
+          onClick={onDelete}
+          className="flex items-center gap-1 h-7 px-2 text-[10px] font-medium text-destructive hover:bg-destructive/10 border border-destructive/30 rounded-sm transition-colors disabled:opacity-40"
+        >
+          <Trash2 className="size-3 shrink-0" />
+          {t("credentials.deleteSelected")}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          title={t("credentials.cancelSelection")}
+          className="flex items-center justify-center size-7 text-muted-foreground hover:text-foreground border border-transparent hover:bg-muted/60 rounded-sm transition-colors"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function HostManager({
   pendingEditId,
   pendingAction,
@@ -125,10 +275,25 @@ export function HostManager({
   useEffect(() => {
     hostsRef.current = hosts;
   }, [hosts]);
+  const credentialsRef = useRef<Credential[]>([]);
+  useEffect(() => {
+    credentialsRef.current = credentials;
+  }, [credentials]);
   const [editingCredFolderName, setEditingCredFolderName] = useState<
     string | null
   >(null);
   const [editingCredFolderValue, setEditingCredFolderValue] = useState("");
+
+  // VRIT: credential multi-select + folder open-state (parity with the host
+  // list). selectionMode is toggled from the Credentials toolbar via a
+  // CustomEvent; openFolders controls which credential folders are expanded.
+  const [credSelectionMode, setCredSelectionMode] = useState(false);
+  const [selectedCredIds, setSelectedCredIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [openCredFolders, setOpenCredFolders] = useState<Set<string>>(
+    new Set(),
+  );
 
   useEffect(() => {
     onTagsChange?.([...new Set(credentials.flatMap((c) => c.tags ?? []))]);
@@ -242,9 +407,23 @@ export function HostManager({
         });
       }
     };
+    // VRIT: credential toolbar actions (Select / Expand all / Collapse all).
+    const handleToggleSelect = () =>
+      setCredSelectionMode((on) => {
+        if (on) setSelectedCredIds(new Set());
+        return !on;
+      });
+    const handleExpandAll = () =>
+      setOpenCredFolders(
+        new Set(credentialsRef.current.map((c) => c.folder || "Uncategorized")),
+      );
+    const handleCollapseAll = () => setOpenCredFolders(new Set());
     window.addEventListener("host-manager:add-host", handleAddHost);
     window.addEventListener("host-manager:add-credential", handleAddCredential);
     window.addEventListener("host-manager:edit-host", handleEditHost);
+    window.addEventListener("credentials:toggle-select", handleToggleSelect);
+    window.addEventListener("credentials:expand-all", handleExpandAll);
+    window.addEventListener("credentials:collapse-all", handleCollapseAll);
     return () => {
       window.removeEventListener("host-manager:add-host", handleAddHost);
       window.removeEventListener(
@@ -252,6 +431,12 @@ export function HostManager({
         handleAddCredential,
       );
       window.removeEventListener("host-manager:edit-host", handleEditHost);
+      window.removeEventListener(
+        "credentials:toggle-select",
+        handleToggleSelect,
+      );
+      window.removeEventListener("credentials:expand-all", handleExpandAll);
+      window.removeEventListener("credentials:collapse-all", handleCollapseAll);
     };
   }, [active]);
 
@@ -304,6 +489,73 @@ export function HostManager({
       toast.success(t("hosts.duplicatedCredential", { name: cred.name }));
     } catch {
       toast.error(t("hosts.failedToDuplicateCredential"));
+    }
+  };
+
+  // VRIT: bulk actions for credential multi-select.
+  const toggleCredSelected = (id: string) =>
+    setSelectedCredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleCredFolderOpen = (folder: string) =>
+    setOpenCredFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
+
+  const exitCredSelection = () => {
+    setCredSelectionMode(false);
+    setSelectedCredIds(new Set());
+  };
+
+  const handleBulkDeleteCredentials = () => {
+    const ids = [...selectedCredIds];
+    if (ids.length === 0) return;
+    setConfirmDialog({
+      message: t("credentials.bulkDeleteConfirm", { count: ids.length }),
+      onConfirm: async () => {
+        try {
+          await Promise.all(ids.map((id) => deleteCredential(Number(id))));
+          setCredentials((prev) => prev.filter((c) => !selectedCredIds.has(c.id)));
+          toast.success(t("credentials.bulkDeleted", { count: ids.length }));
+        } catch {
+          toast.error(t("hosts.failedToDeleteCredential2"));
+        } finally {
+          exitCredSelection();
+        }
+      },
+    });
+  };
+
+  const handleMoveCredentialsToFolder = async (folder: string | null) => {
+    const ids = [...selectedCredIds];
+    if (ids.length === 0) return;
+    try {
+      await Promise.all(
+        ids.map((id) => updateCredential(Number(id), { folder })),
+      );
+      setCredentials((prev) =>
+        prev.map((c) =>
+          selectedCredIds.has(c.id) ? { ...c, folder: folder ?? "" } : c,
+        ),
+      );
+      window.dispatchEvent(new CustomEvent("termix:credentials-changed"));
+      toast.success(
+        t("credentials.bulkMoved", {
+          count: ids.length,
+          folder: folder || t("credentials.noFolderLabel"),
+        }),
+      );
+    } catch {
+      toast.error(t("hosts.failedToRenameFolder"));
+    } finally {
+      exitCredSelection();
     }
   };
 
@@ -506,6 +758,16 @@ export function HostManager({
             </div>
           )}
 
+          {credSelectionMode && (
+            <CredentialSelectionBar
+              count={selectedCredIds.size}
+              folders={credentialFolders}
+              onMove={handleMoveCredentialsToFolder}
+              onDelete={handleBulkDeleteCredentials}
+              onCancel={exitCredSelection}
+            />
+          )}
+
           <HostCredentialList
             credentialFolders={credentialFolders}
             filteredCredentials={filteredCredentials}
@@ -528,6 +790,11 @@ export function HostManager({
               setActiveCredentialTab("general");
             }}
             onConfirmDialogChange={setConfirmDialog}
+            selectionMode={credSelectionMode}
+            selectedIds={selectedCredIds}
+            onToggleSelect={toggleCredSelected}
+            openFolders={openCredFolders}
+            onToggleFolder={toggleCredFolderOpen}
           />
         </div>
       )}

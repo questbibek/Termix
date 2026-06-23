@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Check,
   ChevronRight,
   Copy,
   CopyPlus,
@@ -30,6 +31,9 @@ function CredentialItem({
   cred,
   usedByCount,
   stripeIndex,
+  selectionMode,
+  selected,
+  onToggleSelect,
   onDeploy,
   onEdit,
   onDuplicate,
@@ -38,6 +42,9 @@ function CredentialItem({
   cred: Credential;
   usedByCount: number;
   stripeIndex: number;
+  selectionMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   onDeploy: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -47,10 +54,21 @@ function CredentialItem({
 
   return (
     <div
-      className={`group relative flex items-stretch cursor-default select-none transition-colors hover:bg-muted/40 ${stripeIndex % 2 === 1 ? "bg-muted/20" : ""}`}
+      onClick={selectionMode ? onToggleSelect : undefined}
+      className={`group relative flex items-stretch select-none transition-colors ${selectionMode ? "cursor-pointer" : "cursor-default"} ${selected ? "bg-accent-brand/10" : "hover:bg-muted/40"} ${!selected && stripeIndex % 2 === 1 ? "bg-muted/20" : ""}`}
     >
-      {/* Type stripe */}
-      <div className="w-[3px] shrink-0 bg-transparent" />
+      {/* VRIT: type stripe, or selection checkbox in multi-select mode */}
+      {selectionMode ? (
+        <div className="flex items-center justify-center w-6 shrink-0">
+          <span
+            className={`size-3.5 flex items-center justify-center border rounded-[3px] transition-colors ${selected ? "bg-accent-brand border-accent-brand text-background" : "border-muted-foreground/40"}`}
+          >
+            {selected && <Check className="size-2.5" strokeWidth={3} />}
+          </span>
+        </div>
+      ) : (
+        <div className="w-[3px] shrink-0 bg-transparent" />
+      )}
 
       <div className="flex flex-col flex-1 min-w-0 px-2.5 pt-2 pb-1.5 gap-1">
         {/* Name row */}
@@ -97,8 +115,10 @@ function CredentialItem({
           </div>
         )}
 
-        {/* Action tray — slides open on hover */}
-        <div className="overflow-hidden transition-all duration-150 ease-out max-h-0 opacity-0 group-hover:max-h-[60px] group-hover:opacity-100">
+        {/* Action tray — slides open on hover (hidden while selecting) */}
+        <div
+          className={`overflow-hidden transition-all duration-150 ease-out max-h-0 opacity-0 ${selectionMode ? "" : "group-hover:max-h-[60px] group-hover:opacity-100"}`}
+        >
           <div className="flex items-center gap-1 pt-1.5 pl-2 pb-1 border-t border-border/40 mt-0.5">
             {isKey && (
               <>
@@ -161,11 +181,16 @@ function CredentialFolderItem({
   creds,
   allHosts,
   stripeOffset,
+  open,
+  onToggleOpen,
   editingFolderName,
   editingFolderValue,
   onEditingFolderNameChange,
   onEditingFolderValueChange,
   onRenameFolder,
+  selectionMode,
+  selectedIds,
+  onToggleSelect,
   onDeploy,
   onEdit,
   onDuplicate,
@@ -175,22 +200,25 @@ function CredentialFolderItem({
   creds: Credential[];
   allHosts: Host[];
   stripeOffset: number;
+  open: boolean;
+  onToggleOpen: () => void;
   editingFolderName: string | null;
   editingFolderValue: string;
   onEditingFolderNameChange: (name: string | null) => void;
   onEditingFolderValueChange: (value: string) => void;
   onRenameFolder: (folder: string, newName: string) => Promise<void>;
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
   onDeploy: (cred: Credential) => void;
   onEdit: (cred: Credential) => void;
   onDuplicate: (cred: Credential) => void;
   onDelete: (cred: Credential) => void;
 }) {
-  const [open, setOpen] = useState(false);
-
   return (
     <div>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggleOpen}
         className={`group/folder flex items-center gap-2 w-full px-3 py-2 hover:bg-muted/50 transition-colors text-left cursor-pointer ${stripeOffset % 2 === 1 ? "bg-muted/20" : ""}`}
       >
         <ChevronRight
@@ -264,6 +292,9 @@ function CredentialFolderItem({
                 cred={cred}
                 usedByCount={usedByCount}
                 stripeIndex={stripeOffset + 1 + i}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(cred.id)}
+                onToggleSelect={() => onToggleSelect(cred.id)}
                 onDeploy={() => onDeploy(cred)}
                 onEdit={() => onEdit(cred)}
                 onDuplicate={() => onDuplicate(cred)}
@@ -293,6 +324,11 @@ export function HostCredentialList({
   onDeleteCredential,
   onAddCredential,
   onConfirmDialogChange,
+  selectionMode = false,
+  selectedIds = new Set<string>(),
+  onToggleSelect = () => {},
+  openFolders,
+  onToggleFolder,
 }: {
   credentialFolders: string[];
   filteredCredentials: Credential[];
@@ -309,6 +345,11 @@ export function HostCredentialList({
   onDeleteCredential: (cred: Credential) => Promise<void>;
   onAddCredential: () => void;
   onConfirmDialogChange: (dialog: ConfirmDialog) => void;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  openFolders?: Set<string>;
+  onToggleFolder?: (folder: string) => void;
 }) {
   const { t } = useTranslation();
 
@@ -358,6 +399,21 @@ export function HostCredentialList({
     }
   }
 
+  // Fallback folder open-state for when the parent doesn't control it.
+  const [localOpen, setLocalOpen] = useState<Set<string>>(new Set());
+  const isOpen = (folder: string) =>
+    openFolders ? openFolders.has(folder) : localOpen.has(folder);
+  const toggleOpen = (folder: string) => {
+    if (onToggleFolder) onToggleFolder(folder);
+    else
+      setLocalOpen((prev) => {
+        const next = new Set(prev);
+        if (next.has(folder)) next.delete(folder);
+        else next.add(folder);
+        return next;
+      });
+  };
+
   let globalStripe = 0;
 
   return (
@@ -377,11 +433,16 @@ export function HostCredentialList({
               creds={creds}
               allHosts={allHosts}
               stripeOffset={offset}
+              open={isOpen(folder)}
+              onToggleOpen={() => toggleOpen(folder)}
               editingFolderName={editingFolderName}
               editingFolderValue={editingFolderValue}
               onEditingFolderNameChange={onEditingFolderNameChange}
               onEditingFolderValueChange={onEditingFolderValueChange}
               onRenameFolder={onRenameFolder}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
               onDeploy={onDeployCredential}
               onEdit={handleEdit}
               onDuplicate={onDuplicateCredential}

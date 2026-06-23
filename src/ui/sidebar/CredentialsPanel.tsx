@@ -5,8 +5,12 @@ import {
   Check,
   ExternalLink,
   Filter,
+  FoldVertical,
+  ListChecks,
+  MoreHorizontal,
   Plus,
   Search,
+  UnfoldVertical,
   X,
 } from "lucide-react";
 import { HostManager } from "@/sidebar/HostManager";
@@ -241,6 +245,58 @@ export function CredentialsPanel({
                     ))}
                   </>
                 )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {/* VRIT: fork addition — credential multi-select + folder actions */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground hover:text-foreground"
+                  title={t("credentials.moreActions")}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="text-xs min-w-[180px]"
+              >
+                <DropdownMenuItem
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("credentials:toggle-select"),
+                    )
+                  }
+                  className="flex items-center gap-1.5"
+                >
+                  <ListChecks className="size-3.5 shrink-0" />
+                  {t("credentials.selectCredentials")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("credentials:expand-all"),
+                    )
+                  }
+                  className="flex items-center gap-1.5"
+                >
+                  <UnfoldVertical className="size-3.5 shrink-0" />
+                  {t("credentials.expandAllFolders")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("credentials:collapse-all"),
+                    )
+                  }
+                  className="flex items-center gap-1.5"
+                >
+                  <FoldVertical className="size-3.5 shrink-0" />
+                  {t("credentials.collapseAllFolders")}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <a
