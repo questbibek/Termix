@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useConfirmation } from "@/hooks/use-confirmation.ts";
@@ -40,11 +40,13 @@ import {
 import {
   Box,
   ChevronDown,
+  ChevronsUpDown,
   Copy,
   Cpu,
   Database,
   Download,
   Folder,
+  FolderPlus,
   Globe,
   GripVertical,
   Network,
@@ -69,6 +71,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/popover";
 import { toast } from "sonner";
 import { FOLDER_COLORS } from "@/lib/theme";
 import { FOLDER_ICONS } from "@/types/ui-types";
@@ -126,12 +133,177 @@ function FolderIconEl({
   }
 }
 
+// Searchable folder picker for the snippet dialog — mirrors the folder picker
+// used in the host/credential editors, adapted to snippets' flat (non-nested)
+// folders. Typing a new name and confirming persists the folder (with default
+// color/icon) so the snippet isn't orphaned to a folder that doesn't exist.
+function SnippetFolderPicker({
+  value,
+  onChange,
+  folders,
+  onCreateFolder,
+}: {
+  value: string | null;
+  onChange: (name: string | null) => void;
+  folders: SnippetFolder[];
+  onCreateFolder: (name: string) => Promise<boolean>;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const sorted = useMemo(
+    () => [...folders].sort((a, b) => a.name.localeCompare(b.name)),
+    [folders],
+  );
+
+  const query = search.trim();
+  const queryLower = query.toLowerCase();
+  const filtered = query
+    ? sorted.filter((f) => f.name.toLowerCase().includes(queryLower))
+    : sorted;
+  const canCreate =
+    query.length > 0 &&
+    !folders.some((f) => f.name.toLowerCase() === queryLower);
+
+  const selected = value ? folders.find((f) => f.name === value) : undefined;
+
+  function commit(name: string | null) {
+    onChange(name);
+    setSearch("");
+    setOpen(false);
+  }
+
+  async function handleCreate() {
+    if (!canCreate || creating) return;
+    setCreating(true);
+    const ok = await onCreateFolder(query);
+    setCreating(false);
+    if (ok) commit(query);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 h-9 w-full min-w-0 border border-border bg-background px-3 text-sm text-foreground transition-colors hover:border-ring/60 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 outline-none"
+        >
+          {value ? (
+            <span className="flex items-center gap-1.5 min-w-0 flex-1">
+              <FolderIconEl
+                icon={selected?.icon ?? "folder"}
+                className="size-3.5 shrink-0"
+                style={{ color: selected?.color }}
+              />
+              <span className="truncate">{value}</span>
+            </span>
+          ) : (
+            <span className="flex-1 text-left text-muted-foreground">
+              {t("newUi.sidebar.snippets.noFolder")}
+            </span>
+          )}
+          {value && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(null);
+              }}
+              className="shrink-0 text-muted-foreground/50 hover:text-foreground"
+            >
+              <X className="size-3" />
+            </span>
+          )}
+          <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground/50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        className="w-max min-w-(--radix-popover-trigger-width) max-w-72 max-h-(--radix-popover-content-available-height) p-0 rounded-none border-0 ring-1 ring-border shadow-md flex flex-col overflow-hidden"
+      >
+        <div className="flex items-center gap-2 border-b border-border px-2.5 h-8 shrink-0">
+          <Search className="size-3 shrink-0 text-muted-foreground/60" />
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (canCreate) void handleCreate();
+                else if (filtered.length > 0) commit(filtered[0].name);
+              }
+            }}
+            placeholder={t("newUi.sidebar.snippets.folderPickerSearch")}
+            className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground/50 text-foreground min-w-0"
+          />
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto py-1">
+          {value && (
+            <button
+              type="button"
+              onClick={() => commit(null)}
+              className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <X className="size-3.5 shrink-0" />
+              {t("newUi.sidebar.snippets.noFolder")}
+            </button>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              disabled={creating}
+              onClick={() => void handleCreate()}
+              className="flex items-center gap-2 w-full px-2.5 py-1.5 text-xs text-accent-brand hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <FolderPlus className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {t("newUi.sidebar.snippets.folderPickerCreate", { name: query })}
+              </span>
+            </button>
+          )}
+          {filtered.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => commit(f.name)}
+              className={`flex items-center gap-2 w-full px-2.5 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground transition-colors ${
+                f.name === value
+                  ? "bg-accent/60 text-foreground"
+                  : "text-foreground/80"
+              }`}
+            >
+              <FolderIconEl
+                icon={f.icon ?? "folder"}
+                className="size-3.5 shrink-0"
+                style={{ color: f.color }}
+              />
+              <span className="truncate">{f.name}</span>
+            </button>
+          ))}
+          {filtered.length === 0 && !canCreate && (
+            <div className="py-4 text-center text-xs text-muted-foreground">
+              {t("newUi.sidebar.snippets.folderPickerEmpty")}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function SnippetFormDialog({
   open,
   onOpenChange,
   folders,
   snippet,
   onSave,
+  onCreateFolder,
   availableHosts,
 }: {
   open: boolean;
@@ -139,6 +311,7 @@ function SnippetFormDialog({
   folders: SnippetFolder[];
   snippet: Snippet | null;
   onSave: (data: Omit<Snippet, "id" | "order">, id?: number) => void;
+  onCreateFolder: (name: string) => Promise<boolean>;
   availableHosts: SSHHost[];
 }) {
   const { t } = useTranslation();
@@ -238,20 +411,12 @@ function SnippetFormDialog({
                 ({t("newUi.sidebar.snippets.optional")})
               </span>
             </label>
-            <select
-              value={folder ?? ""}
-              onChange={(e) =>
-                setFolder(e.target.value === "" ? null : e.target.value)
-              }
-              className="px-3 py-2 text-sm bg-background border border-border text-foreground outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="">{t("newUi.sidebar.snippets.noFolder")}</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.name}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+            <SnippetFolderPicker
+              value={folder}
+              onChange={setFolder}
+              folders={folders}
+              onCreateFolder={onCreateFolder}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold">
@@ -1427,7 +1592,9 @@ export function SnippetsPanel({
     }
   }
 
-  async function handleCreateFolder(f: Omit<SnippetFolder, "id" | "open">) {
+  async function handleCreateFolder(
+    f: Omit<SnippetFolder, "id" | "open">,
+  ): Promise<boolean> {
     try {
       const created = await apiCreateSnippetFolder({
         name: f.name,
@@ -1438,9 +1605,21 @@ export function SnippetsPanel({
         typeof created.id === "number" ? created.id : Number(created.id);
       setFolders((prev) => [...prev, { ...f, id, open: true }]);
       toast.success(t("newUi.sidebar.snippets.folderCreateSuccess"));
+      return true;
     } catch {
       toast.error(t("newUi.sidebar.snippets.folderCreateFailed"));
+      return false;
     }
+  }
+
+  // Inline create from the snippet folder picker: just a name, with the
+  // default color/icon (the same defaults the Create Folder dialog starts on).
+  function handleCreateFolderByName(name: string): Promise<boolean> {
+    return handleCreateFolder({
+      name,
+      color: FOLDER_COLORS[0],
+      icon: "folder",
+    });
   }
 
   function toggleFolder(id: number) {
@@ -1913,6 +2092,7 @@ export function SnippetsPanel({
         folders={folders}
         snippet={editingSnippet}
         onSave={handleSaveSnippet}
+        onCreateFolder={handleCreateFolderByName}
         availableHosts={availableHosts}
       />
       <CreateFolderDialog
