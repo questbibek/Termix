@@ -359,6 +359,7 @@ export async function uploadSSHFile(
 
     const response = await fileManagerApi.post("/ssh/uploadFileStream", form, {
       timeout: 0,
+      headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
   } catch (error) {
