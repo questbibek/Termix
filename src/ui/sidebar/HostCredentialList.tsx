@@ -34,6 +34,7 @@ function CredentialItem({
   selectionMode,
   selected,
   onToggleSelect,
+  termixIdLinked,
   onDeploy,
   onEdit,
   onDuplicate,
@@ -45,6 +46,7 @@ function CredentialItem({
   selectionMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
+  termixIdLinked?: boolean;
   onDeploy: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -81,6 +83,11 @@ function CredentialItem({
           >
             {isKey ? "KEY" : "PWD"}
           </span>
+          {termixIdLinked && (
+            <span className="text-[9px] px-1 py-px font-bold border leading-none shrink-0 border-accent-brand/30 text-accent-brand/70">
+              ID
+            </span>
+          )}
         </div>
 
         {/* Username row */}
@@ -185,6 +192,7 @@ function CredentialFolderItem({
   onToggleOpen,
   editingFolderName,
   editingFolderValue,
+  termixIdLinkedIds,
   onEditingFolderNameChange,
   onEditingFolderValueChange,
   onRenameFolder,
@@ -204,6 +212,7 @@ function CredentialFolderItem({
   onToggleOpen: () => void;
   editingFolderName: string | null;
   editingFolderValue: string;
+  termixIdLinkedIds?: Set<number>;
   onEditingFolderNameChange: (name: string | null) => void;
   onEditingFolderValueChange: (value: string) => void;
   onRenameFolder: (folder: string, newName: string) => Promise<void>;
@@ -295,6 +304,7 @@ function CredentialFolderItem({
                 selectionMode={selectionMode}
                 selected={selectedIds.has(cred.id)}
                 onToggleSelect={() => onToggleSelect(cred.id)}
+                termixIdLinked={termixIdLinkedIds?.has(Number(cred.id))}
                 onDeploy={() => onDeploy(cred)}
                 onEdit={() => onEdit(cred)}
                 onDuplicate={() => onDuplicate(cred)}
@@ -315,6 +325,7 @@ export function HostCredentialList({
   allHosts,
   editingFolderName,
   editingFolderValue,
+  termixIdLinkedIds,
   onEditingFolderNameChange,
   onEditingFolderValueChange,
   onRenameFolder,
@@ -336,6 +347,7 @@ export function HostCredentialList({
   allHosts: Host[];
   editingFolderName: string | null;
   editingFolderValue: string;
+  termixIdLinkedIds?: Set<number>;
   onEditingFolderNameChange: (name: string | null) => void;
   onEditingFolderValueChange: (value: string) => void;
   onRenameFolder: (folder: string, newName: string) => Promise<void>;
@@ -384,6 +396,9 @@ export function HostCredentialList({
                 password?: string;
               }
             ).password ?? ""),
+        password:
+          (full as CredentialWithCertificate & { password?: string })
+            .password ?? "",
         passphrase: (
           full as CredentialWithCertificate & {
             hasKeyPassword?: boolean;
@@ -437,6 +452,7 @@ export function HostCredentialList({
               onToggleOpen={() => toggleOpen(folder)}
               editingFolderName={editingFolderName}
               editingFolderValue={editingFolderValue}
+              termixIdLinkedIds={termixIdLinkedIds}
               onEditingFolderNameChange={onEditingFolderNameChange}
               onEditingFolderValueChange={onEditingFolderValueChange}
               onRenameFolder={onRenameFolder}

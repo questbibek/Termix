@@ -54,12 +54,14 @@ import {
 } from "@/main-axios";
 import type { Host, HostFolder, TabType } from "@/types/ui-types";
 import { FolderIconEl } from "@/components/folder-style";
+import { resolveHostTabType } from "@/lib/host-connection-tabs";
 import { copyToClipboard } from "@/lib/clipboard";
 import { FolderMetadataDialog } from "./FolderMetadataDialog";
 import {
   useStatusColorScheme,
   getStatusClasses,
 } from "@/hooks/use-status-color-scheme";
+import { useServerStatus } from "@/lib/ServerStatusContext";
 import {
   Tooltip,
   TooltipContent,
@@ -302,6 +304,11 @@ export function HostItem({
     () => localStorage.getItem("compactHostView") === "true",
   );
   const statusScheme = useStatusColorScheme();
+  const { initialLoadComplete, getStatus } = useServerStatus();
+  const statusCheckOn = statusCheckEnabled(host);
+  const statusLoading = !initialLoadComplete && statusCheckOn;
+  const liveStatus = statusCheckOn ? getStatus(Number(host.id)) : null;
+  const isOnline = liveStatus != null ? liveStatus === "online" : host.online;
   const isTouchOnly =
     typeof window !== "undefined" && window.matchMedia("(hover: none)").matches;
   const shouldUseClickTray = trayOnClick || isTouchOnly;
@@ -412,7 +419,7 @@ export function HostItem({
         }}
       >
         <div
-          className={`w-[3px] shrink-0 transition-colors ${getStatusClasses(host.online, statusScheme, "stripe")}`}
+          className={`w-[3px] shrink-0 transition-colors ${getStatusClasses(isOnline, statusScheme, "stripe", statusLoading)}`}
         />
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-1.5 min-w-0 px-2.5 py-1">
@@ -427,11 +434,11 @@ export function HostItem({
               <Tooltip>
                 <TooltipTrigger className="flex items-center">
                   <span
-                    className={`size-1.5 rounded-full shrink-0 ${getStatusClasses(host.online, statusScheme, "dot")}`}
+                    className={`size-1.5 rounded-full shrink-0 ${getStatusClasses(isOnline, statusScheme, "dot", statusLoading)}`}
                   />
                 </TooltipTrigger>
                 <TooltipContent side="right">
-                  {buildStatusTooltip(host, host.online)}
+                  {buildStatusTooltip(host, isOnline)}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -915,7 +922,7 @@ export function HostItem({
     >
       {/* Status stripe */}
       <div
-        className={`w-[3px] shrink-0 transition-colors ${getStatusClasses(host.online, statusScheme, "stripe")}`}
+        className={`w-[3px] shrink-0 transition-colors ${getStatusClasses(isOnline, statusScheme, "stripe", statusLoading)}`}
       />
 
       <div className="flex flex-col flex-1 min-w-0 px-2.5 pt-2 pb-1.5 gap-1">
@@ -932,11 +939,11 @@ export function HostItem({
             <Tooltip>
               <TooltipTrigger className="flex items-center">
                 <span
-                  className={`size-1.5 rounded-full shrink-0 ${getStatusClasses(host.online, statusScheme, "dot")}`}
+                  className={`size-1.5 rounded-full shrink-0 ${getStatusClasses(isOnline, statusScheme, "dot", statusLoading)}`}
                 />
               </TooltipTrigger>
               <TooltipContent side="right">
-                {buildStatusTooltip(host, host.online)}
+                {buildStatusTooltip(host, isOnline)}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -1073,7 +1080,7 @@ export function HostItem({
         <div
           className={`overflow-hidden transition-all duration-150 ease-out max-h-0 opacity-0 ${!shouldUseClickTray ? "group-hover:max-h-[300px] group-hover:opacity-100" : ""} ${selectionMode ? "!max-h-0 !opacity-0" : ""} ${(isMenuOpen || (shouldUseClickTray && isTrayOpen)) && !selectionMode ? "!max-h-[300px] !opacity-100" : ""}`}
         >
-          {host.online &&
+          {isOnline &&
             ((host.cpu != null && host.cpu > 0) ||
               (host.ram != null && host.ram > 0)) && (
               <div className="flex items-center gap-3 pl-3">
@@ -1470,6 +1477,7 @@ export function FolderItem({
   onTrayOpenChange,
   onManageFolder,
   onDeleteFolder,
+  onOpenAllSessions,
   onMoveHostsToFolder,
   draggedHostIds,
   onDragHostStart,
@@ -1496,13 +1504,20 @@ export function FolderItem({
   onTrayOpenChange: (hostId: string | null) => void;
   onManageFolder: (folder: HostFolder) => void;
   onDeleteFolder: (folder: HostFolder) => void;
+  onOpenAllSessions: (folder: HostFolder) => void;
   onMoveHostsToFolder: (hostIds: string[], targetPath: string) => void;
   draggedHostIds: string[] | null;
   onDragHostStart: (hostId: string) => void;
   onDragEnd: () => void;
 }) {
   const { t } = useTranslation();
-  const { total, online } = folderHostCount(folder);
+  const { getStatus, initialLoadComplete } = useServerStatus();
+  const { total } = folderHostCount(folder);
+  const online = initialLoadComplete
+    ? collectAllHosts(folder.children).filter(
+        (h) => statusCheckEnabled(h) && getStatus(Number(h.id)) === "online",
+      ).length
+    : folderHostCount(folder).online;
   const [dragOver, setDragOver] = useState(false);
 
   if (query && !folderHasMatch(folder, query)) return null;
@@ -1561,6 +1576,16 @@ export function FolderItem({
             {!isGroup && (
               <span className="flex items-center gap-1.5 ml-1 opacity-0 group-hover/folder:opacity-100 transition-opacity">
                 <span
+                  title={t("hosts.openAllSessions")}
+                  className="text-muted-foreground/50 hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenAllSessions(folder);
+                  }}
+                >
+                  <FolderOpen className="size-2.5" />
+                </span>
+                <span
                   title={t("hosts.editFolder")}
                   className="text-muted-foreground/50 hover:text-foreground"
                   onClick={(e) => {
@@ -1612,6 +1637,7 @@ export function FolderItem({
                 onTrayOpenChange={onTrayOpenChange}
                 onManageFolder={onManageFolder}
                 onDeleteFolder={onDeleteFolder}
+                onOpenAllSessions={onOpenAllSessions}
                 onMoveHostsToFolder={onMoveHostsToFolder}
                 draggedHostIds={draggedHostIds}
                 onDragHostStart={onDragHostStart}
@@ -1729,6 +1755,14 @@ export function SidebarTree({
 
   function handleManageFolder(folder: HostFolder) {
     setFolderDialog({ mode: "edit", folder });
+  }
+
+  function handleOpenAllSessions(folder: HostFolder) {
+    const hosts = collectAllHosts(folder.children);
+    for (const host of hosts) {
+      const type = resolveHostTabType(host);
+      onOpenTab(host, type);
+    }
   }
 
   async function handleSaveFolderMetadata(value: {
@@ -1947,6 +1981,7 @@ export function SidebarTree({
                 onTrayOpenChange={setOpenTrayHostId}
                 onManageFolder={handleManageFolder}
                 onDeleteFolder={handleDeleteFolder}
+                onOpenAllSessions={handleOpenAllSessions}
                 onMoveHostsToFolder={handleMoveHostsToFolder}
                 draggedHostIds={draggedHostIds}
                 onDragHostStart={handleDragHostStart}

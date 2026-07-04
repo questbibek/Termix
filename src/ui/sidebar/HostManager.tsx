@@ -31,6 +31,7 @@ import {
   deployCredentialToHost,
   renameCredentialFolder,
   updateCredential,
+  getLinkedCredentialIds,
 } from "@/main-axios";
 
 import type { Host, Credential } from "@/types/ui-types";
@@ -283,6 +284,9 @@ export function HostManager({
     string | null
   >(null);
   const [editingCredFolderValue, setEditingCredFolderValue] = useState("");
+  const [termixIdLinkedIds, setTermixIdLinkedIds] = useState<Set<number>>(
+    new Set(),
+  );
 
   // VRIT: credential multi-select + folder open-state (parity with the host
   // list). selectionMode is toggled from the Credentials toolbar via a
@@ -337,9 +341,16 @@ export function HostManager({
       .finally(() => setCredentialsLoading(false));
   };
 
+  const reloadLinkedIds = () => {
+    getLinkedCredentialIds()
+      .then((d) => setTermixIdLinkedIds(new Set(d.credentialIds)))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     reloadHosts();
     reloadCredentials();
+    reloadLinkedIds();
 
     window.addEventListener("termix:hosts-changed", reloadHosts);
     window.addEventListener("termix:credentials-changed", reloadCredentials);
@@ -700,6 +711,7 @@ export function HostManager({
                     username: saved.username ?? "",
                     type: saved.authType === "key" ? "key" : "password",
                     value: saved.value,
+                    password: saved.password,
                     publicKey: saved.publicKey,
                     passphrase: saved.passphrase,
                     description: saved.description,
@@ -775,6 +787,7 @@ export function HostManager({
             allHosts={allHosts}
             editingFolderName={editingCredFolderName}
             editingFolderValue={editingCredFolderValue}
+            termixIdLinkedIds={termixIdLinkedIds}
             onEditingFolderNameChange={setEditingCredFolderName}
             onEditingFolderValueChange={setEditingCredFolderValue}
             onRenameFolder={handleRenameCredentialFolder}

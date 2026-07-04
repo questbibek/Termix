@@ -39,7 +39,7 @@ jobs:
           exit 1
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prep.outputs.dev_branch }}
           fetch-depth: 0
@@ -137,7 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dev branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prep.outputs.dev_branch }}
           fetch-depth: 0
@@ -220,7 +220,7 @@ jobs:
       build_ref: ${{ steps.merge.outputs.build_ref }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -297,7 +297,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 1
@@ -370,7 +370,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 1
@@ -409,7 +409,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Termix
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.merge-to-main.outputs.build_ref }}
           fetch-depth: 1
@@ -429,7 +429,7 @@ jobs:
           npm run generate:openapi
 
       - name: Checkout Docs repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: Termix-SSH/Docs
           ref: main
@@ -483,11 +483,16 @@ jobs:
 
           PR_NUMBER=$(gh pr list --repo Termix-SSH/Docs --head "$BRANCH" --base main --state open --json number -q '.[0].number' || true)
           if [ -z "$PR_NUMBER" ]; then
-            PR_NUMBER=$(gh pr create --repo Termix-SSH/Docs \
+            PR_URL=$(gh pr create --repo Termix-SSH/Docs \
               --base main --head "$BRANCH" \
               --title "release-${{ needs.prep.outputs.version }}" \
-              --body "API docs for ${{ needs.prep.outputs.version }}" \
-              | grep -oE '[0-9]+$')
+              --body "API docs for ${{ needs.prep.outputs.version }}")
+            PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Failed to find or create a PR for $BRANCH."
+            exit 1
           fi
 
           gh pr merge "$PR_NUMBER" --repo Termix-SSH/Docs --squash --admin
@@ -498,7 +503,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 1
