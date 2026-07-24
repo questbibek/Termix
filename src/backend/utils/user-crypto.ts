@@ -169,6 +169,22 @@ class UserCrypto {
     sessionDurationMs: number,
   ): Promise<boolean> {
     try {
+      // Deferred dual-auth linking: the account has password-encrypted data but
+      // no OIDC-wrapped DEK yet. The OIDC system key cannot decrypt the
+      // password-wrapped DEK, and falling through would regenerate a fresh DEK
+      // and orphan the user's data. Block OIDC login until a password login
+      // finalizes the conversion.
+      if (await this.hasPendingOIDCConversion(userId)) {
+        databaseLogger.warn(
+          "OIDC login blocked: dual-auth conversion pending. User must log in with their password once to finish linking.",
+          {
+            operation: "oidc_auth_pending_conversion",
+            userId,
+          },
+        );
+        return false;
+      }
+
       const oidcEncryptedDEK = await this.getOIDCEncryptedDEK(userId);
 
       if (oidcEncryptedDEK) {
@@ -496,6 +512,112 @@ class UserCrypto {
       });
       throw error;
     }
+  }
+
+  /**
+   * Convert to dual-auth OIDC encryption now if the user's DEK is unlocked in
+   * this process; otherwise record a pending flag so the conversion is
+   * finalized on the user's next password login. Returns whether the
+   * conversion completed synchronously.
+   */
+  async scheduleOIDCConversion(
+    userId: string,
+  ): Promise<{ converted: boolean }> {
+    const existingEncryptedDEK = await this.getEncryptedDEK(userId);
+    const existingKEKSalt = await this.getKEKSalt(userId);
+
+    // No password-derived encryption to preserve: nothing to convert, and the
+    // OIDC login path will set up encryption on first sign-in.
+    if (!existingEncryptedDEK && !existingKEKSalt) {
+      await this.clearPendingOIDCConversion(userId);
+      return { converted: true };
+    }
+
+    if (this.isUserUnlocked(userId)) {
+      await this.convertToOIDCEncryption(userId);
+      await this.clearPendingOIDCConversion(userId);
+      return { converted: true };
+    }
+
+    await this.setPendingOIDCConversion(userId);
+    databaseLogger.info(
+      "Deferred dual-auth OIDC conversion until next password login",
+      {
+        operation: "oidc_conversion_deferred",
+        userId,
+      },
+    );
+    return { converted: false };
+  }
+
+  /**
+   * Complete a deferred dual-auth conversion. Safe to call after any auth that
+   * unlocks the DEK; it no-ops unless a conversion is pending and the DEK is
+   * available. Never throws — failures are logged and leave the flag set so a
+   * later login can retry.
+   */
+  async finalizePendingOIDCConversion(userId: string): Promise<void> {
+    try {
+      if (!(await this.hasPendingOIDCConversion(userId))) {
+        return;
+      }
+      if (!this.getUserDataKey(userId)) {
+        return;
+      }
+
+      await this.convertToOIDCEncryption(userId);
+      await this.clearPendingOIDCConversion(userId);
+
+      databaseLogger.info("Finalized deferred dual-auth OIDC conversion", {
+        operation: "oidc_conversion_finalized",
+        userId,
+      });
+    } catch (error) {
+      databaseLogger.error(
+        "Failed to finalize deferred OIDC conversion",
+        error,
+        {
+          operation: "oidc_conversion_finalize_error",
+          userId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      );
+    }
+  }
+
+  async hasPendingOIDCConversion(userId: string): Promise<boolean> {
+    try {
+      const key = `user_pending_oidc_conversion_${userId}`;
+      const result = await getDb()
+        .select()
+        .from(settings)
+        .where(eq(settings.key, key));
+      return result.length > 0 && result[0].value === "true";
+    } catch {
+      return false;
+    }
+  }
+
+  private async setPendingOIDCConversion(userId: string): Promise<void> {
+    const key = `user_pending_oidc_conversion_${userId}`;
+    const existing = await getDb()
+      .select()
+      .from(settings)
+      .where(eq(settings.key, key));
+
+    if (existing.length > 0) {
+      await getDb()
+        .update(settings)
+        .set({ value: "true" })
+        .where(eq(settings.key, key));
+    } else {
+      await getDb().insert(settings).values({ key, value: "true" });
+    }
+  }
+
+  private async clearPendingOIDCConversion(userId: string): Promise<void> {
+    const key = `user_pending_oidc_conversion_${userId}`;
+    await getDb().delete(settings).where(eq(settings.key, key));
   }
 
   private async validatePassword(

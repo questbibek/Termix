@@ -16,7 +16,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { AlertCircle, Check, Eye, EyeOff, Pencil, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Eye,
+  EyeOff,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AdminToggle } from "./AdminSettingsShared";
 import type { AdminUser } from "./AdminManagementSections";
@@ -571,8 +579,13 @@ export function AdminLinkAccountDialog({
 
     setSubmitting(true);
     try {
+      let result: {
+        success: boolean;
+        message: string;
+        conversionDeferred?: boolean;
+      };
       if (isOidcInitiator) {
-        await linkOIDCToPasswordAccount(linkAccountTarget.id, trimmed);
+        result = await linkOIDCToPasswordAccount(linkAccountTarget.id, trimmed);
         setUsers((prev) => prev.filter((u) => u.id !== linkAccountTarget.id));
       } else {
         const oidcUser = users.find(
@@ -582,13 +595,19 @@ export function AdminLinkAccountDialog({
           toast.error(t("admin.linkAccountOidcNotFound"));
           return;
         }
-        await linkOIDCToPasswordAccount(
+        result = await linkOIDCToPasswordAccount(
           oidcUser.id,
           linkAccountTarget.username,
         );
         setUsers((prev) => prev.filter((u) => u.id !== oidcUser.id));
       }
-      toast.success(t("admin.linkAccountSuccess", { username: trimmed }));
+      // When the conversion is deferred, surface the server guidance (the target
+      // must sign in once with their password) instead of a plain success toast.
+      if (result?.conversionDeferred) {
+        toast.success(result.message, { duration: 10000 });
+      } else {
+        toast.success(t("admin.linkAccountSuccess", { username: trimmed }));
+      }
       setOtherUsername("");
       onOpenChange(false);
     } catch (error: unknown) {

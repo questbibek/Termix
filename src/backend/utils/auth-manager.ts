@@ -142,6 +142,7 @@ class AuthManager {
 
     if (authenticated) {
       await this.performLazyEncryptionMigration(userId);
+      await this.userCrypto.finalizePendingOIDCConversion(userId);
     }
 
     return authenticated;
@@ -167,6 +168,7 @@ class AuthManager {
 
     if (authenticated) {
       await this.performLazyEncryptionMigration(userId);
+      await this.userCrypto.finalizePendingOIDCConversion(userId);
     }
 
     return authenticated;
@@ -174,6 +176,16 @@ class AuthManager {
 
   async convertToOIDCEncryption(userId: string): Promise<void> {
     await this.userCrypto.convertToOIDCEncryption(userId);
+  }
+
+  async scheduleOIDCConversion(
+    userId: string,
+  ): Promise<{ converted: boolean }> {
+    return await this.userCrypto.scheduleOIDCConversion(userId);
+  }
+
+  async hasPendingOIDCConversion(userId: string): Promise<boolean> {
+    return await this.userCrypto.hasPendingOIDCConversion(userId);
   }
 
   private async performLazyEncryptionMigration(userId: string): Promise<void> {

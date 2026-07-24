@@ -194,9 +194,9 @@ router.post("/create", async (req, res) => {
   if (isEmailAllowlistEnabled()) {
     const userCount =
       (
-        db.$client
-          .prepare("SELECT COUNT(*) as count FROM users")
-          .get() as { count?: number }
+        db.$client.prepare("SELECT COUNT(*) as count FROM users").get() as {
+          count?: number;
+        }
       )?.count || 0;
     if (userCount > 0) {
       if (!isValidEmail(email)) {
@@ -1142,6 +1142,25 @@ router.get("/oidc/callback", async (req, res) => {
       }
 
       const ghUserRecord = ghUser[0];
+      // Refuse SSO login while a dual-auth conversion is still pending; the
+      // account's data cannot be unlocked via OIDC until a password login
+      // finalizes the conversion.
+      if (await authManager.hasPendingOIDCConversion(ghUserRecord.id)) {
+        authLogger.warn(
+          "GitHub OIDC login blocked: dual-auth conversion pending",
+          {
+            operation: "github_oidc_login_pending_conversion",
+            userId: ghUserRecord.id,
+            username: ghUserRecord.username,
+          },
+        );
+        const pendingRedirect = new URL(frontendOrigin);
+        pendingRedirect.searchParams.set(
+          "error",
+          "Account linking is not finished. Please sign in once with your password to enable OIDC login.",
+        );
+        return res.redirect(pendingRedirect.toString());
+      }
       try {
         await authManager.authenticateOIDCUser(
           ghUserRecord.id,
@@ -1613,6 +1632,23 @@ router.get("/oidc/callback", async (req, res) => {
       }
     }
 
+    // A dual-auth account whose OIDC-encryption conversion is still pending
+    // cannot unlock its data via OIDC yet. Refuse SSO login with clear guidance
+    // rather than issuing a session with locked (undecryptable) data.
+    if (await authManager.hasPendingOIDCConversion(userRecord.id)) {
+      authLogger.warn("OIDC login blocked: dual-auth conversion pending", {
+        operation: "oidc_login_pending_conversion",
+        userId: userRecord.id,
+        username: userRecord.username,
+      });
+      const pendingRedirect = new URL(frontendOrigin);
+      pendingRedirect.searchParams.set(
+        "error",
+        "Account linking is not finished. Please sign in once with your password to enable OIDC login.",
+      );
+      return res.redirect(pendingRedirect.toString());
+    }
+
     try {
       await authManager.authenticateOIDCUser(userRecord.id, deviceInfo.type);
     } catch (setupError) {
@@ -1821,7 +1857,13 @@ router.post("/login", async (req, res) => {
     const deviceInfo = parseUserAgent(req);
 
     let dataUnlocked = false;
-    if (userRecord.isOidc) {
+    // A dual-auth account with a pending OIDC-encryption conversion must unlock
+    // via its password-derived key so the deferred conversion can be finalized.
+    // The OIDC path is intentionally blocked while a conversion is pending.
+    const pendingOidcConversion = await authManager.hasPendingOIDCConversion(
+      userRecord.id,
+    );
+    if (userRecord.isOidc && !pendingOidcConversion) {
       dataUnlocked = await authManager.authenticateOIDCUser(
         userRecord.id,
         deviceInfo.type,

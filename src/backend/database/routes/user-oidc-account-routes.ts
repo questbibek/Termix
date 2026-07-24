@@ -135,8 +135,16 @@ export function registerUserOidcAccountRoutes(
         })
         .where(eq(users.id, targetUser.id));
 
+      let conversionDeferred = false;
       try {
-        await authManager.convertToOIDCEncryption(targetUser.id);
+        // Convert the target's data encryption to dual-auth. If the target
+        // account is not currently unlocked in this process (the usual case
+        // for an admin-initiated link), the conversion is deferred and
+        // finalized automatically on the target's next password login.
+        const { converted } = await authManager.scheduleOIDCConversion(
+          targetUser.id,
+        );
+        conversionDeferred = !converted;
       } catch (encryptionError) {
         authLogger.error(
           "Failed to convert encryption to OIDC during linking",
@@ -206,7 +214,10 @@ export function registerUserOidcAccountRoutes(
 
       res.json({
         success: true,
-        message: `OIDC user ${oidcUser.username} has been linked to ${targetUser.username}. The password account can now use both password and OIDC login.`,
+        conversionDeferred,
+        message: conversionDeferred
+          ? `OIDC user ${oidcUser.username} has been linked to ${targetUser.username}. To finish enabling dual-auth, ${targetUser.username} must sign in once with their password — OIDC sign-in stays disabled until then.`
+          : `OIDC user ${oidcUser.username} has been linked to ${targetUser.username}. The password account can now use both password and OIDC login.`,
       });
     } catch (err) {
       authLogger.error("Failed to link OIDC user to password account", err, {

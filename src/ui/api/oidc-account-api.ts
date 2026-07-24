@@ -6,7 +6,11 @@ import { authApi, handleApiError } from "@/main-axios";
 export async function linkOIDCToPasswordAccount(
   oidcUserId: string,
   targetUsername: string,
-): Promise<{ success: boolean; message: string }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  conversionDeferred?: boolean;
+}> {
   try {
     const response = await authApi.post("/users/link-oidc-to-password", {
       oidcUserId,
